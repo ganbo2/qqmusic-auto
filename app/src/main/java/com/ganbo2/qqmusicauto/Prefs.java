@@ -17,6 +17,8 @@ public class Prefs {
     public static final String KEY_USE_COORD = "use_coord";
     public static final String KEY_COORD_X = "coord_x";
     public static final String KEY_COORD_Y = "coord_y";
+    /** 定时裕度（毫秒）：到点后再等这么久才点击。0 = 整点立刻点。 */
+    public static final String KEY_BUFFER = "buffer_ms";
 
     public static SharedPreferences get(Context c) {
         return c.getSharedPreferences(NAME, Context.MODE_PRIVATE);
@@ -68,5 +70,13 @@ public class Prefs {
     /** 点击纵坐标，占屏幕高度的百分比（0~100）。默认 90 = 靠底部。 */
     public static int getCoordY(Context c) {
         return get(c).getInt(KEY_COORD_Y, 90);
+    }
+
+    /** 定时裕度（毫秒）：到点后再等这么久才点击。默认 300ms，0 = 整点立刻点。 */
+    public static int getBufferMs(Context c) {
+        int v = get(c).getInt(KEY_BUFFER, 300);
+        if (v < 0) v = 0;
+        if (v > 5000) v = 5000;
+        return v;
     }
 }

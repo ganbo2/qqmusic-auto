@@ -116,6 +116,19 @@
                 android:hint="90" />
         </LinearLayout>
 
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:text="到点后延迟（毫秒）：到点再等这么久才点击。0 = 整点立刻点；数值越大越晚点、越不抢跑。默认 300。" />
+
+        <EditText
+            android:id="@+id/etBuffer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:inputType="number"
+            android:hint="300（0~5000）" />
+
         <Button
             android:id="@+id/btnSave"
             android:layout_width="match_parent"

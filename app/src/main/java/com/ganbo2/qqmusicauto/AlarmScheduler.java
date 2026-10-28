@@ -21,8 +21,6 @@ import java.util.TimeZone;
 public class AlarmScheduler {
     public static final String EXTRA_INDEX = "index";
     private static final String TAG = "AlarmScheduler";
-    /** 到点后再等 300ms 再点，留出极小裕度防止比 QQ音乐 服务器开窗早一瞬间（窗口整日开放，晚 300ms 无感）。 */
-    private static final long BUFFER_MS = 300;
 
     /** 解析 "08:00,12:30,20:00" 或换行/中文逗号分隔的时间字符串。 */
     public static List<String> parseTimes(String times) {
@@ -52,8 +50,9 @@ public class AlarmScheduler {
 
     public static void scheduleOne(Context context, AlarmManager am, int index,
                                   String hhmm, long offsetMs) {
+        long buffer = Prefs.getBufferMs(context);                // 用户设置的定时裕度
         long realTarget = nextBeijingInstant(hhmm, offsetMs);   // 真实北京时间目标
-        realTarget += BUFFER_MS;                                 // 安全裕度：确保不早于服务器开窗
+        realTarget += buffer;                                    // 裕度：确保不早于服务器开窗
         long systemTarget = realTarget - offsetMs;              // 换算回系统时钟
         Intent intent = new Intent(context, AlarmReceiver.class);
         intent.putExtra(EXTRA_INDEX, index);

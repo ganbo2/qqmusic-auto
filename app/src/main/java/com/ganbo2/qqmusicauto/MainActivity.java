@@ -42,6 +42,7 @@ public class MainActivity extends AppCompatActivity {
     private CheckBox cbUseCoord;
     private EditText etCoordX;
     private EditText etCoordY;
+    private EditText etBuffer;
     private final List<String> times = new ArrayList<>();
 
     private final ActivityResultLauncher<String> notifPermLauncher =
@@ -59,6 +60,7 @@ public class MainActivity extends AppCompatActivity {
         cbUseCoord = findViewById(R.id.cbUseCoord);
         etCoordX = findViewById(R.id.etCoordX);
         etCoordY = findViewById(R.id.etCoordY);
+        etBuffer = findViewById(R.id.etBuffer);
 
         SharedPreferences sp = Prefs.get(this);
         for (String t : AlarmScheduler.parseTimes(Prefs.getTimes(this))) times.add(t);
@@ -67,6 +69,7 @@ public class MainActivity extends AppCompatActivity {
         cbUseCoord.setChecked(Prefs.getUseCoord(this));
         etCoordX.setText(String.valueOf(Prefs.getCoordX(this)));
         etCoordY.setText(String.valueOf(Prefs.getCoordY(this)));
+        etBuffer.setText(String.valueOf(Prefs.getBufferMs(this)));
 
         renderTimes();
         refreshNetworkTime(); // 启动即校时
@@ -171,6 +174,18 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
+        int bufferMs;
+        try {
+            bufferMs = Integer.parseInt(etBuffer.getText().toString().trim());
+        } catch (NumberFormatException ex) {
+            Toast.makeText(this, "裕度必须是数字（毫秒，0~5000）", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        if (bufferMs < 0 || bufferMs > 5000) {
+            Toast.makeText(this, "裕度必须在 0~5000 毫秒之间", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
         Collections.sort(times);
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < times.size(); i++) {
@@ -184,6 +199,7 @@ public class MainActivity extends AppCompatActivity {
         e.putBoolean(Prefs.KEY_USE_COORD, useCoord);
         e.putInt(Prefs.KEY_COORD_X, coordX);
         e.putInt(Prefs.KEY_COORD_Y, coordY);
+        e.putInt(Prefs.KEY_BUFFER, bufferMs);
         e.putString(Prefs.KEY_STEPS, Prefs.defaultSteps());
         e.apply();
 
@@ -199,7 +215,8 @@ public class MainActivity extends AppCompatActivity {
                 AlarmScheduler.scheduleAll(MainActivity.this, fOffset);
                 updateStatus(fOffset);
                 Toast.makeText(MainActivity.this,
-                        "已启用 " + times.size() + " 个定时点击（校时偏差 " + fOffset + "ms）",
+                        "已启用 " + times.size() + " 个定时点击（校时偏差 " + fOffset
+                                + "ms，到点后延迟 " + bufferMs + "ms 再点）",
                         Toast.LENGTH_LONG).show();
             });
         }).start();
