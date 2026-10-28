@@ -31,3 +31,13 @@ dependencies {
     implementation 'androidx.appcompat:appcompat:1.6.1'
     implementation 'androidx.activity:activity:1.8.2'
 }
+
+// 强制 Kotlin 标准库版本对齐，避免 duplicate class 错误
+// （androidx 传递依赖了旧的 kotlin-stdlib-jdk7/jdk8:1.6.21，与 AGP 自带的 1.8.22 冲突）
+configurations.all {
+    resolutionStrategy {
+        force 'org.jetbrains.kotlin:kotlin-stdlib:1.8.22'
+        force 'org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.8.22'
+        force 'org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.8.22'
+    }
+}
