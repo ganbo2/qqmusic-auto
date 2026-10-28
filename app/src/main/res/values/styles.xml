@@ -1,0 +1,7 @@
+<resources>
+    <style name="Theme.QQMusicAuto" parent="Theme.AppCompat.Light.NoActionBar">
+        <item name="colorPrimary">#3b82f6</item>
+        <item name="colorPrimaryDark">#1d4ed8</item>
+        <item name="colorAccent">#3b82f6</item>
+    </style>
+</resources>
