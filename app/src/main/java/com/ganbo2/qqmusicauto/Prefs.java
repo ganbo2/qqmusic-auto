@@ -14,6 +14,9 @@ public class Prefs {
     public static final String KEY_LAUNCH = "launch_app";
     public static final String KEY_STEPS = "steps";
     public static final String KEY_OFFSET = "ntp_offset";
+    public static final String KEY_USE_COORD = "use_coord";
+    public static final String KEY_COORD_X = "coord_x";
+    public static final String KEY_COORD_Y = "coord_y";
 
     public static SharedPreferences get(Context c) {
         return c.getSharedPreferences(NAME, Context.MODE_PRIVATE);
@@ -50,5 +53,20 @@ public class Prefs {
     /** 默认不导航：用户自己打开页面，时间到直接点。 */
     public static String defaultSteps() {
         return "[]";
+    }
+
+    /** 是否用「坐标点击」模式（适合文字搜不到的图片按钮）。 */
+    public static boolean getUseCoord(Context c) {
+        return get(c).getBoolean(KEY_USE_COORD, false);
+    }
+
+    /** 点击横坐标，占屏幕宽度的百分比（0~100）。默认 50 = 屏幕水平中点。 */
+    public static int getCoordX(Context c) {
+        return get(c).getInt(KEY_COORD_X, 50);
+    }
+
+    /** 点击纵坐标，占屏幕高度的百分比（0~100）。默认 90 = 靠底部。 */
+    public static int getCoordY(Context c) {
+        return get(c).getInt(KEY_COORD_Y, 90);
     }
 }

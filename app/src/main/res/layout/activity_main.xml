@@ -68,6 +68,54 @@
             android:checked="false"
             android:text="（可选）时间到自动打开 QQ音乐" />
 
+        <CheckBox
+            android:id="@+id/cbUseCoord"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:checked="false"
+            android:text="用坐标点击（适合「立即提现」这类图片按钮，推荐勾选）" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="点击位置（占屏幕宽/高的百分比，0~100）。默认水平中点、靠底部。用「立即测试一次」校准。" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="X%"
+                android:layout_gravity="center_vertical" />
+
+            <EditText
+                android:id="@+id/etCoordX"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:inputType="number"
+                android:hint="50" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Y%"
+                android:layout_gravity="center_vertical"
+                android:layout_marginStart="12dp" />
+
+            <EditText
+                android:id="@+id/etCoordY"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:inputType="number"
+                android:hint="90" />
+        </LinearLayout>
+
         <Button
             android:id="@+id/btnSave"
             android:layout_width="match_parent"

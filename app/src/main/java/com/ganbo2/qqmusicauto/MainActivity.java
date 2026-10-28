@@ -40,6 +40,9 @@ public class MainActivity extends AppCompatActivity {
     private EditText etTarget;
     private CheckBox cbLaunch;
     private TextView tvStatus;
+    private CheckBox cbUseCoord;
+    private EditText etCoordX;
+    private EditText etCoordY;
     private final List<String> times = new ArrayList<>();
 
     private final ActivityResultLauncher<String> notifPermLauncher =
@@ -54,11 +57,17 @@ public class MainActivity extends AppCompatActivity {
         etTarget = findViewById(R.id.etTarget);
         cbLaunch = findViewById(R.id.cbLaunch);
         tvStatus = findViewById(R.id.tvStatus);
+        cbUseCoord = findViewById(R.id.cbUseCoord);
+        etCoordX = findViewById(R.id.etCoordX);
+        etCoordY = findViewById(R.id.etCoordY);
 
         SharedPreferences sp = Prefs.get(this);
         for (String t : AlarmScheduler.parseTimes(Prefs.getTimes(this))) times.add(t);
         etTarget.setText(sp.getString(Prefs.KEY_TARGET, "立即提现"));
         cbLaunch.setChecked(sp.getBoolean(Prefs.KEY_LAUNCH, false));
+        cbUseCoord.setChecked(Prefs.getUseCoord(this));
+        etCoordX.setText(String.valueOf(Prefs.getCoordX(this)));
+        etCoordY.setText(String.valueOf(Prefs.getCoordY(this)));
 
         renderTimes();
         refreshNetworkTime(); // 启动即校时
@@ -163,6 +172,20 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
+        boolean useCoord = cbUseCoord.isChecked();
+        int coordX, coordY;
+        try {
+            coordX = Integer.parseInt(etCoordX.getText().toString().trim());
+            coordY = Integer.parseInt(etCoordY.getText().toString().trim());
+        } catch (NumberFormatException ex) {
+            Toast.makeText(this, "坐标百分比必须是 0~100 的数字", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        if (coordX < 0 || coordX > 100 || coordY < 0 || coordY > 100) {
+            Toast.makeText(this, "坐标百分比必须在 0~100 之间", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
         Collections.sort(times);
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < times.size(); i++) {
@@ -173,8 +196,21 @@ public class MainActivity extends AppCompatActivity {
         e.putString(Prefs.KEY_TIMES, sb.toString());
         e.putString(Prefs.KEY_TARGET, target);
         e.putBoolean(Prefs.KEY_LAUNCH, cbLaunch.isChecked());
+        e.putBoolean(Prefs.KEY_USE_COORD, useCoord);
+        e.putInt(Prefs.KEY_COORD_X, coordX);
+        e.putInt(Prefs.KEY_COORD_Y, coordY);
         e.putString(Prefs.KEY_STEPS, Prefs.defaultSteps());
         e.apply();
+
+        // 精确闹钟权限未授予时给出强提醒（否则后台会被严重延迟）
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            AlarmManager am = (AlarmManager) getSystemService(ALARM_SERVICE);
+            if (am != null && !am.canScheduleExactAlarms()) {
+                Toast.makeText(this,
+                        "⚠ 未授予「精确闹钟」权限，到点可能延迟！请去系统设置授予",
+                        Toast.LENGTH_LONG).show();
+            }
+        }
 
         Toast.makeText(this, "正在网络校时并启用 " + times.size() + " 个定时点击...", Toast.LENGTH_SHORT).show();
         // 重新校时后按最新偏差排程
