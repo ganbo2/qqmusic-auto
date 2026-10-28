@@ -5,6 +5,7 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Build;
+import android.os.PowerManager;
 import android.util.Log;
 
 import java.util.List;
@@ -20,6 +21,13 @@ public class AlarmReceiver extends BroadcastReceiver {
     @Override
     public void onReceive(Context context, Intent intent) {
         Log.d(TAG, "alarm fired");
+        // 保持 CPU 唤醒 5 秒，确保手势在点按窗口内执行完毕（setAlarmClock 已自动点亮屏幕）
+        PowerManager pm = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
+        if (pm != null) {
+            PowerManager.WakeLock wl = pm.newWakeLock(
+                    PowerManager.PARTIAL_WAKE_LOCK, "qqmusicauto:alarm");
+            wl.acquire(5000);
+        }
         int index = intent.getIntExtra(AlarmScheduler.EXTRA_INDEX, -1);
 
         if (index >= 0) {

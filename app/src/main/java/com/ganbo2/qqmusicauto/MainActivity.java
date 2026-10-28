@@ -1,7 +1,6 @@
 package com.ganbo2.qqmusicauto;
 
 import android.Manifest;
-import android.app.AlarmManager;
 import android.app.TimePickerDialog;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -84,7 +83,6 @@ public class MainActivity extends AppCompatActivity {
                 notifPermLauncher.launch(Manifest.permission.POST_NOTIFICATIONS);
             }
         }
-        requestExactAlarm();
     }
 
     /** 后台获取网络时间，更新状态栏并存储偏差。 */
@@ -148,19 +146,6 @@ public class MainActivity extends AppCompatActivity {
         d.show();
     }
 
-    private void requestExactAlarm() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            AlarmManager am = (AlarmManager) getSystemService(ALARM_SERVICE);
-            if (am != null && !am.canScheduleExactAlarms()) {
-                try {
-                    startActivity(new Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM));
-                } catch (Exception e) {
-                    Toast.makeText(this, "请手动授予「精确闹钟」权限", Toast.LENGTH_SHORT).show();
-                }
-            }
-        }
-    }
-
     private void saveAndSchedule() {
         String target = etTarget.getText().toString().trim();
         if (target.isEmpty()) {
@@ -201,16 +186,6 @@ public class MainActivity extends AppCompatActivity {
         e.putInt(Prefs.KEY_COORD_Y, coordY);
         e.putString(Prefs.KEY_STEPS, Prefs.defaultSteps());
         e.apply();
-
-        // 精确闹钟权限未授予时给出强提醒（否则后台会被严重延迟）
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            AlarmManager am = (AlarmManager) getSystemService(ALARM_SERVICE);
-            if (am != null && !am.canScheduleExactAlarms()) {
-                Toast.makeText(this,
-                        "⚠ 未授予「精确闹钟」权限，到点可能延迟！请去系统设置授予",
-                        Toast.LENGTH_LONG).show();
-            }
-        }
 
         Toast.makeText(this, "正在网络校时并启用 " + times.size() + " 个定时点击...", Toast.LENGTH_SHORT).show();
         // 重新校时后按最新偏差排程

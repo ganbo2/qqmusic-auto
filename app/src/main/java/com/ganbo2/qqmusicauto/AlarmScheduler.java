@@ -21,6 +21,8 @@ import java.util.TimeZone;
 public class AlarmScheduler {
     public static final String EXTRA_INDEX = "index";
     private static final String TAG = "AlarmScheduler";
+    /** 到点后再等 1 秒再点，确保不会早于 QQ音乐 服务器开窗（窗口整日开放，晚 1 秒无影响）。 */
+    private static final long BUFFER_MS = 1000;
 
     /** 解析 "08:00,12:30,20:00" 或换行/中文逗号分隔的时间字符串。 */
     public static List<String> parseTimes(String times) {
@@ -51,19 +53,19 @@ public class AlarmScheduler {
     public static void scheduleOne(Context context, AlarmManager am, int index,
                                   String hhmm, long offsetMs) {
         long realTarget = nextBeijingInstant(hhmm, offsetMs);   // 真实北京时间目标
+        realTarget += BUFFER_MS;                                 // 安全裕度：确保不早于服务器开窗
         long systemTarget = realTarget - offsetMs;              // 换算回系统时钟
         Intent intent = new Intent(context, AlarmReceiver.class);
         intent.putExtra(EXTRA_INDEX, index);
         PendingIntent pi = PendingIntent.getBroadcast(
                 context, index, intent,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            try {
-                am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, systemTarget, pi);
-            } catch (SecurityException e) {
-                Log.w(TAG, "exact alarm denied, fallback to inexact", e);
-                am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, systemTarget, pi);
-            }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            // 用 AlarmClock 通道：无需「精确闹钟」权限、不受 Doze 合批、到点准时并自动点亮屏幕。
+            // 完美适配没有精确闹钟权限入口的国产 ROM（如努比亚）。
+            AlarmManager.AlarmClockInfo info =
+                    new AlarmManager.AlarmClockInfo(systemTarget, null);
+            am.setAlarmClock(info, pi);
         } else {
             am.set(AlarmManager.RTC_WAKEUP, systemTarget, pi);
         }
