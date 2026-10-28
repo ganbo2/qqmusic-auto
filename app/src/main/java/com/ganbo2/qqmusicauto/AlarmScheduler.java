@@ -21,8 +21,8 @@ import java.util.TimeZone;
 public class AlarmScheduler {
     public static final String EXTRA_INDEX = "index";
     private static final String TAG = "AlarmScheduler";
-    /** 到点后再等 1 秒再点，确保不会早于 QQ音乐 服务器开窗（窗口整日开放，晚 1 秒无影响）。 */
-    private static final long BUFFER_MS = 1000;
+    /** 到点后再等 300ms 再点，留出极小裕度防止比 QQ音乐 服务器开窗早一瞬间（窗口整日开放，晚 300ms 无感）。 */
+    private static final long BUFFER_MS = 300;
 
     /** 解析 "08:00,12:30,20:00" 或换行/中文逗号分隔的时间字符串。 */
     public static List<String> parseTimes(String times) {
