@@ -10,22 +10,33 @@
 
 ## 一、怎么拿到 APK（本机无法编译，走云端构建）
 
-本工程没有本地 Android SDK，推荐用 **GitHub Actions 免费自动打包**：
+本工程**已经帮你 `git init` 并提交好了**（分支 `main`，共 21 个文件）。你只需把代码推到 GitHub，Actions 会自动编译出 APK。整个过程免费、约 3~6 分钟。
 
-1. 在 GitHub 新建仓库（如 `qqmusic-auto`）。
-2. 把本目录推上去：
-   ```bash
-   git init
-   git add .
-   git commit -m "init qqmusic-auto"
-   git remote add origin https://github.com/你的用户名/qqmusic-auto.git
-   git push -u origin main
-   ```
-3. 打开仓库 → **Actions** → 找到 `Build QQMusicAuto APK` → 等绿色对勾。
-4. 进入该次运行的 **Artifacts**，下载 `qqmusic-auto-debug`，解压得 `app-debug.apk`。
+### 第 1 步：在 GitHub 网页新建一个空仓库
+1. 打开 https://github.com/new
+2. Repository name 填 `qqmusic-auto`（随意）
+3. **务必保持空仓库**：不要勾选 "Add a README file" / "Add .gitignore" / "Choose a license"
+4. 点 **Create repository**
 
-> 备选：用 Android Studio 打开本工程直接 `Build > Build Bundle(s)/APK(s)`。
-> 若 Actions 报「缺少 gradle wrapper」，在本地/Android Studio 执行一次 `gradle wrapper` 再推送。
+### 第 2 步：把本地代码推上去
+新建完成后，页面会显示仓库地址。在本地 **Git Bash**（或终端）进入本工程目录，执行：
+
+```bash
+git remote add origin https://github.com/你的用户名/qqmusic-auto.git
+git push -u origin main
+```
+
+> **关于登录认证（重要）**：GitHub 已不支持用「账号密码」登录 git 命令行。
+> - **最简单（推荐）**：用 **GitHub Desktop**（图形界面）。打开它 → File → Add local repository → 选本工程目录 → 点 **Publish repository**，登录一次 GitHub 即可推送，全程不用记命令。
+> - **用命令行 HTTPS**：密码处要填 **Personal Access Token（PAT）**：GitHub → 右上角头像 → Settings → Developer settings → Personal access tokens → 生成一个勾选 `repo` 权限的 token；推送时用户名填账号、密码处粘贴这个 token。
+
+### 第 3 步：等 Actions 自动打包并下载 APK
+1. 推送成功后，打开你的仓库 → 顶部 **Actions** 标签。
+2. 会看到工作流 **Build QQMusicAuto APK** 自动开始跑（黄色圆点 → 约几分钟后变绿色对勾）。
+3. 点进这次运行 → 最下方 **Artifacts** 区域 → 下载 **`qqmusic-auto-debug`**。
+4. 解压下载的 zip，里面就是 **`app-debug.apk`**。
+
+> 说明：workflow 用 `gradle-version: 8.2` 在云端自动下载 Gradle 编译，**不需要本机有 JDK / Android SDK / Gradle / gradle wrapper**。
 
 ---
 
