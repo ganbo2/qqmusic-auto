@@ -43,6 +43,7 @@ public class MainActivity extends AppCompatActivity {
     private EditText etCoordX;
     private EditText etCoordY;
     private EditText etBuffer;
+    private LinearLayout containerLog;
     private final List<String> times = new ArrayList<>();
 
     private final ActivityResultLauncher<String> notifPermLauncher =
@@ -61,6 +62,7 @@ public class MainActivity extends AppCompatActivity {
         etCoordX = findViewById(R.id.etCoordX);
         etCoordY = findViewById(R.id.etCoordY);
         etBuffer = findViewById(R.id.etBuffer);
+        containerLog = findViewById(R.id.containerLog);
 
         SharedPreferences sp = Prefs.get(this);
         for (String t : AlarmScheduler.parseTimes(Prefs.getTimes(this))) times.add(t);
@@ -73,12 +75,19 @@ public class MainActivity extends AppCompatActivity {
 
         renderTimes();
         refreshNetworkTime(); // 启动即校时
+        renderLog();         // 显示点击日志
 
         findViewById(R.id.btnAccessibility).setOnClickListener(v ->
                 startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));
         findViewById(R.id.btnAddTime).setOnClickListener(v -> showTimePicker());
         findViewById(R.id.btnSave).setOnClickListener(v -> saveAndSchedule());
         findViewById(R.id.btnTest).setOnClickListener(v -> testNow());
+        findViewById(R.id.btnRefreshLog).setOnClickListener(v -> renderLog());
+        findViewById(R.id.btnClearLog).setOnClickListener(v -> {
+            LogStore.clear(this);
+            renderLog();
+            Toast.makeText(this, "日志已清空", Toast.LENGTH_SHORT).show();
+        });
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
@@ -230,5 +239,55 @@ public class MainActivity extends AppCompatActivity {
         trigger.setPackage(getPackageName());
         sendBroadcast(trigger);
         Toast.makeText(this, "已立即触发一次点击（请确保「立即提现」页面已打开）", Toast.LENGTH_SHORT).show();
+    }
+
+    /** 渲染点击日志列表：每条可点标记成功/失败，长按删除。 */
+    private void renderLog() {
+        containerLog.removeAllViews();
+        List<LogStore.Entry> list = LogStore.list(this);
+        if (list.isEmpty()) {
+            TextView empty = new TextView(this);
+            empty.setText("（暂无日志。到点自动点击后会自动记录一条，可在通知栏点「✓成功 / ✗失败」标记）");
+            containerLog.addView(empty);
+            return;
+        }
+        java.text.SimpleDateFormat sdf =
+                new java.text.SimpleDateFormat("MM-dd HH:mm:ss.SSS", java.util.Locale.CHINA);
+        sdf.setTimeZone(java.util.TimeZone.getTimeZone("Asia/Shanghai"));
+        for (final LogStore.Entry e : list) {
+            final long id = e.id;
+            final int cur = e.result;
+            TextView row = new TextView(this);
+            String res;
+            if (cur == LogStore.RESULT_SUCCESS) res = "✅ 成功";
+            else if (cur == LogStore.RESULT_FAILURE) res = "❌ 失败";
+            else res = "❓ 未标记";
+            row.setText("#" + id + "  " + sdf.format(new java.util.Date(e.realTimeMs))
+                    + "  偏差 " + (e.offsetMs > 0 ? "+" : "") + e.offsetMs
+                    + "ms  裕度 " + e.bufferMs + "ms\n"
+                    + "    " + e.detail + "  → " + res + "（点击切换：成功→失败→成功）");
+            row.setPadding(12, 8, 12, 8);
+            row.setBackgroundResource(android.R.drawable.listitem_background);
+            row.setOnClickListener(v -> {
+                int next;
+                if (cur == LogStore.RESULT_UNKNOWN || cur == LogStore.RESULT_FAILURE) {
+                    next = LogStore.RESULT_SUCCESS;
+                } else {
+                    next = LogStore.RESULT_FAILURE;
+                }
+                LogStore.mark(this, id, next);
+                renderLog();
+                String msg = next == LogStore.RESULT_SUCCESS ? "已标记日志#" + id + " 为「成功」"
+                        : "已标记日志#" + id + " 为「失败」";
+                Toast.makeText(this, msg, Toast.LENGTH_SHORT).show();
+            });
+            row.setOnLongClickListener(v -> {
+                LogStore.remove(this, id);
+                renderLog();
+                Toast.makeText(this, "已删除日志#" + id, Toast.LENGTH_SHORT).show();
+                return true;
+            });
+            containerLog.addView(row);
+        }
     }
 }

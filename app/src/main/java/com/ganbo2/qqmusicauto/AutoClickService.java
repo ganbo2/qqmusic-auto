@@ -147,6 +147,7 @@ public class AutoClickService extends AccessibilityService {
             tapCoordinatePercent(xPct, yPct);
             Log.d(TAG, "coord-mode tap (" + xPct + "%," + yPct + "%)");
             notifyResult("已按坐标点击 (" + xPct + "%," + yPct + "%)");
+            recordLog("坐标点击 (" + xPct + "%," + yPct + "%)");
             running = false;
             return;
         }
@@ -160,6 +161,7 @@ public class AutoClickService extends AccessibilityService {
                 if (clickNodeByText(target)) {
                     Log.d(TAG, "clicked target by text: " + target);
                     notifyResult("已点击「" + target + "」");
+                    recordLog("文字点击「" + target + "」");
                     running = false;
                     return;
                 }
@@ -168,12 +170,14 @@ public class AutoClickService extends AccessibilityService {
                     Log.d(TAG, "text not found, fallback to coord tap (" + xPct + "%," + yPct + "%)");
                     tapCoordinatePercent(xPct, yPct);
                     notifyResult("文字未找到，已按坐标点击 (" + xPct + "%," + yPct + "%)");
+                    recordLog("文字未找到，坐标兜底 (" + xPct + "%," + yPct + "%)");
                     running = false;
                     return;
                 }
                 if (tries[0] >= maxTries) {
                     Log.d(TAG, "target not found within timeout: " + target);
                     notifyResult("未找到「" + target + "」按钮，请确认页面已打开");
+                    recordLog("未找到「" + target + "」按钮（超时）");
                     running = false;
                     return;
                 }
@@ -187,6 +191,33 @@ public class AutoClickService extends AccessibilityService {
     private void notifyResult(String msg) {
         handler.postDelayed(() -> NotificationHelper.notifyBrief(AutoClickService.this,
                 NotificationHelper.NOTIF_ID_STATUS + 1, msg), 800);
+    }
+
+    /**
+     * 记录一条点击日志（真实触发时间、校时偏差、裕度），并弹出「请标记结果」通知。
+     * 通知带 ✓成功 / ✗失败 按钮，点击即写回结果。
+     */
+    private void recordLog(String detail) {
+        try {
+            long offset = Prefs.getOffset(this);
+            long realNow = NtpClient.realNowMs(offset);
+            int buffer = Prefs.getBufferMs(this);
+            long logId = LogStore.add(this, realNow, offset, buffer, detail);
+            final String body = "已记录日志#" + logId + "（点击 " + detail + "）\n"
+                    + "真实时间 " + fmtTime(realNow) + " · 偏差 " + offset + "ms · 裕度 " + buffer + "ms\n"
+                    + "请查看结果：是成功还是失败？";
+            handler.postDelayed(() -> NotificationHelper.notifyMark(
+                    AutoClickService.this, NotificationHelper.NOTIF_ID_MARK, logId, body), 800);
+        } catch (Exception e) {
+            Log.e(TAG, "recordLog failed", e);
+        }
+    }
+
+    private static String fmtTime(long ms) {
+        java.text.SimpleDateFormat sdf =
+                new java.text.SimpleDateFormat("MM-dd HH:mm:ss.SSS", java.util.Locale.CHINA);
+        sdf.setTimeZone(java.util.TimeZone.getTimeZone("Asia/Shanghai"));
+        return sdf.format(new java.util.Date(ms));
     }
 
     /**
