@@ -32,11 +32,10 @@ public class MarkReceiver extends BroadcastReceiver {
             return;
         }
         LogStore.mark(context, logId, result);
-        // 清掉那条标记通知，并刷新常驻倒计时
+        // 清掉那条标记通知，并提示已标记结果
         android.app.NotificationManager nm =
                 (android.app.NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
         if (nm != null) nm.cancel(NotificationHelper.NOTIF_ID_MARK);
-        CountdownService.updateNow(context);
         NotificationHelper.notifyBrief(context,
                 NotificationHelper.NOTIF_ID_STATUS + 2, label);
     }

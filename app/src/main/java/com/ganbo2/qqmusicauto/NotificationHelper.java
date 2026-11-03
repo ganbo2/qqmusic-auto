@@ -12,7 +12,8 @@ import androidx.core.app.NotificationCompat;
 
 /**
  * 通知渠道与通知构建工具。
- * 常驻倒计时通知由 {@link CountdownService} 维护；点击结果提示与「标记成功/失败」按钮通知也走这里。
+ * 点击结果提示与「标记成功/失败」按钮通知都走这里。
+ * 倒计时已移至 APP 内（MainActivity 的 tvCountdown），不再占用状态栏。
  */
 public class NotificationHelper {
     public static final String CHANNEL_ID = "countdown_status";
@@ -37,19 +38,6 @@ public class NotificationHelper {
             ch.setShowBadge(false);
             nm.createNotificationChannel(ch);
         }
-    }
-
-    /** 构建一条常驻通知：标题=QQ音乐自动点击，正文=下次触发时间+倒计时+校时偏差。 */
-    public static Notification buildStatusNotification(Context c, String body) {
-        NotificationCompat.Builder b = new NotificationCompat.Builder(c, CHANNEL_ID)
-                .setSmallIcon(android.R.drawable.ic_menu_recent_history)
-                .setContentTitle("QQ音乐自动点击")
-                .setContentText(body)
-                .setStyle(new NotificationCompat.BigTextStyle().bigText(body))
-                .setPriority(NotificationCompat.PRIORITY_LOW)
-                .setOngoing(true)
-                .setOnlyAlertOnce(true);
-        return b.build();
     }
 
     /** 一次短暂的「已点击」提示（非持续，自动消失）。 */

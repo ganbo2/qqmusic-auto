@@ -136,6 +136,17 @@
             android:layout_marginTop="12dp"
             android:text="2. 保存并启用定时任务" />
 
+        <TextView
+            android:id="@+id/tvCountdown"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:padding="10dp"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:background="#FFF8E1"
+            android:text="北京时间 校时中..." />
+
         <Button
             android:id="@+id/btnTest"
             android:layout_width="match_parent"

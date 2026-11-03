@@ -6,6 +6,8 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.provider.Settings;
 import android.text.format.DateFormat;
 import android.widget.Button;
@@ -44,7 +46,16 @@ public class MainActivity extends AppCompatActivity {
     private EditText etCoordY;
     private EditText etBuffer;
     private LinearLayout containerLog;
+    private TextView tvCountdown;
     private final List<String> times = new ArrayList<>();
+    private final Handler countdownHandler = new Handler(Looper.getMainLooper());
+    private final Runnable countdownTick = new Runnable() {
+        @Override
+        public void run() {
+            tickCountdown();
+            countdownHandler.postDelayed(this, 200);
+        }
+    };
 
     private final ActivityResultLauncher<String> notifPermLauncher =
             registerForActivityResult(new ActivityResultContracts.RequestPermission(), granted -> {});
@@ -63,6 +74,7 @@ public class MainActivity extends AppCompatActivity {
         etCoordY = findViewById(R.id.etCoordY);
         etBuffer = findViewById(R.id.etBuffer);
         containerLog = findViewById(R.id.containerLog);
+        tvCountdown = findViewById(R.id.tvCountdown);
 
         SharedPreferences sp = Prefs.get(this);
         for (String t : AlarmScheduler.parseTimes(Prefs.getTimes(this))) times.add(t);
@@ -76,6 +88,8 @@ public class MainActivity extends AppCompatActivity {
         renderTimes();
         refreshNetworkTime(); // 启动即校时
         renderLog();         // 显示点击日志
+        tickCountdown();
+        countdownHandler.post(countdownTick);
 
         findViewById(R.id.btnAccessibility).setOnClickListener(v ->
                 startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));
@@ -97,6 +111,12 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        countdownHandler.removeCallbacks(countdownTick);
+    }
+
     /** 后台获取网络时间，更新状态栏并存储偏差。 */
     private void refreshNetworkTime() {
         new Thread(() -> {
@@ -115,9 +135,68 @@ public class MainActivity extends AppCompatActivity {
         String bj = sdf.format(new Date(realNow));
         String diff = (offset > 0 ? "+" : "") + offset + " ms";
         if (offset == 0) diff = "（未校时，暂用系统时间）";
-        String next = CountdownService.buildBody(this);
-        tvStatus.setText("网络北京时间：" + bj + "\n与手机时钟偏差：" + diff
-                + "\n" + next + "（常驻显示于通知栏）");
+        tvStatus.setText("网络北京时间：" + bj + "\n与手机时钟偏差：" + diff);
+    }
+
+    /**
+     * 每秒多次刷新：显示精确到毫秒的实时北京时间 + 到下次触发点的倒计时 + 校时偏差。
+     * 倒计时放在 APP 内（保存与测试按钮之间），不再占用状态栏。
+     */
+    private void tickCountdown() {
+        long offset = Prefs.getOffset(this);
+        long nowReal = NtpClient.realNowMs(offset);
+
+        // 实时北京时间，精确到毫秒
+        SimpleDateFormat sdf = new SimpleDateFormat("HH:mm:ss.SSS", Locale.CHINA);
+        sdf.setTimeZone(TimeZone.getTimeZone("Asia/Shanghai"));
+        String nowText = sdf.format(new Date(nowReal));
+
+        // 计算最近一个尚未到来的触发时刻（含裕度）
+        StringBuilder sb = new StringBuilder();
+        sb.append("北京时间 ").append(nowText);
+
+        List<String> times = AlarmScheduler.parseTimes(Prefs.getTimes(this));
+        if (times.isEmpty()) {
+            sb.append("\n尚未设置时间点，请在上方添加");
+        } else {
+            int buffer = Prefs.getBufferMs(this);
+            long best = Long.MAX_VALUE;
+            for (String hhmm : times) {
+                String[] p = hhmm.split(":");
+                TimeZone bj = TimeZone.getTimeZone("Asia/Shanghai");
+                java.util.Calendar cal = java.util.Calendar.getInstance(bj);
+                cal.setTimeInMillis(nowReal);
+                cal.set(java.util.Calendar.HOUR_OF_DAY, Integer.parseInt(p[0]));
+                cal.set(java.util.Calendar.MINUTE, Integer.parseInt(p[1]));
+                cal.set(java.util.Calendar.SECOND, 0);
+                cal.set(java.util.Calendar.MILLISECOND, 0);
+                long target = cal.getTimeInMillis();
+                if (target <= nowReal) target += 86400_000L; // 过了就取下一天
+                target += buffer;
+                if (target < best) best = target;
+            }
+            if (best == Long.MAX_VALUE) {
+                sb.append("\n尚未设置时间点，请在上方添加");
+            } else {
+                SimpleDateFormat nsdf = new SimpleDateFormat("HH:mm:ss.SSS", Locale.CHINA);
+                nsdf.setTimeZone(TimeZone.getTimeZone("Asia/Shanghai"));
+                String next = nsdf.format(new Date(best));
+                long diff = best - nowReal;
+                String rel;
+                if (diff <= 0) {
+                    rel = "即将触发";
+                } else {
+                    long h = diff / 3600_000L;
+                    long m = (diff % 3600_000L) / 60_000L;
+                    long s = (diff % 60_000L) / 1000L;
+                    rel = String.format(Locale.CHINA, "还有 %d小时%d分%d秒", h, m, s);
+                }
+                String offsetTxt = (offset == 0) ? "校时偏差 未校准" :
+                        String.format(Locale.CHINA, "校时偏差 %+dms", offset);
+                sb.append("\n下次点击 ").append(next).append("（").append(rel).append("）· ").append(offsetTxt);
+            }
+        }
+        if (tvCountdown != null) tvCountdown.setText(sb.toString());
     }
 
     private void renderTimes() {
@@ -237,8 +316,9 @@ public class MainActivity extends AppCompatActivity {
         saveAndSchedule();
         Intent trigger = new Intent(AutoClickService.ACTION_TRIGGER);
         trigger.setPackage(getPackageName());
+        trigger.putExtra(AutoClickService.EXTRA_IS_TEST, true);
         sendBroadcast(trigger);
-        Toast.makeText(this, "已立即触发一次点击（请确保「立即提现」页面已打开）", Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, "已立即触发一次点击（测试，不记录日志；请确保「立即提现」页面已打开）", Toast.LENGTH_SHORT).show();
     }
 
     /** 渲染点击日志列表：每条可点标记成功/失败，长按删除。 */

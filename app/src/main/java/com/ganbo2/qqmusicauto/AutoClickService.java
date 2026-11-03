@@ -37,9 +37,12 @@ import java.util.List;
  */
 public class AutoClickService extends AccessibilityService {
     public static final String ACTION_TRIGGER = "com.ganbo2.qqmusicauto.ACTION_TRIGGER";
+    /** 区分「定时触发」与「手动测试触发」：测试触发不记录日志。 */
+    public static final String EXTRA_IS_TEST = "is_test";
     private static final String TAG = "AutoClickService";
 
     private boolean running = false;
+    private boolean isTest = false;
     private Handler handler;
     private BroadcastReceiver receiver;
 
@@ -51,7 +54,7 @@ public class AutoClickService extends AccessibilityService {
             @Override
             public void onReceive(Context context, Intent intent) {
                 if (ACTION_TRIGGER.equals(intent.getAction())) {
-                    startAutoClick();
+                    startAutoClick(intent.getBooleanExtra(EXTRA_IS_TEST, false));
                 }
             }
         };
@@ -79,10 +82,11 @@ public class AutoClickService extends AccessibilityService {
         super.onDestroy();
     }
 
-    private void startAutoClick() {
+    private void startAutoClick(boolean test) {
         if (running) return;
         running = true;
-        Log.d(TAG, "startAutoClick");
+        isTest = test;
+        Log.d(TAG, "startAutoClick" + (test ? " (test)" : ""));
         executeSteps(new Runnable() {
             @Override
             public void run() {
@@ -198,6 +202,10 @@ public class AutoClickService extends AccessibilityService {
      * 通知带 ✓成功 / ✗失败 按钮，点击即写回结果。
      */
     private void recordLog(String detail) {
+        if (isTest) {
+            Log.d(TAG, "test trigger, skip recordLog");
+            return;
+        }
         try {
             long offset = Prefs.getOffset(this);
             long realNow = NtpClient.realNowMs(offset);
