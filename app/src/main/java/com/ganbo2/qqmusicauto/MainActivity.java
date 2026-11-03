@@ -106,7 +106,9 @@ public class MainActivity extends AppCompatActivity {
         String bj = sdf.format(new Date(realNow));
         String diff = (offset > 0 ? "+" : "") + offset + " ms";
         if (offset == 0) diff = "（未校时，暂用系统时间）";
-        tvStatus.setText("网络北京时间：" + bj + "\n与手机时钟偏差：" + diff);
+        String next = CountdownService.buildBody(this);
+        tvStatus.setText("网络北京时间：" + bj + "\n与手机时钟偏差：" + diff
+                + "\n" + next + "（常驻显示于通知栏）");
     }
 
     private void renderTimes() {

@@ -146,6 +146,7 @@ public class AutoClickService extends AccessibilityService {
         if (useCoord) {
             tapCoordinatePercent(xPct, yPct);
             Log.d(TAG, "coord-mode tap (" + xPct + "%," + yPct + "%)");
+            notifyResult("已按坐标点击 (" + xPct + "%," + yPct + "%)");
             running = false;
             return;
         }
@@ -158,6 +159,7 @@ public class AutoClickService extends AccessibilityService {
             public void run() {
                 if (clickNodeByText(target)) {
                     Log.d(TAG, "clicked target by text: " + target);
+                    notifyResult("已点击「" + target + "」");
                     running = false;
                     return;
                 }
@@ -165,11 +167,13 @@ public class AutoClickService extends AccessibilityService {
                 if (tries[0] >= fallbackAfter) {
                     Log.d(TAG, "text not found, fallback to coord tap (" + xPct + "%," + yPct + "%)");
                     tapCoordinatePercent(xPct, yPct);
+                    notifyResult("文字未找到，已按坐标点击 (" + xPct + "%," + yPct + "%)");
                     running = false;
                     return;
                 }
                 if (tries[0] >= maxTries) {
                     Log.d(TAG, "target not found within timeout: " + target);
+                    notifyResult("未找到「" + target + "」按钮，请确认页面已打开");
                     running = false;
                     return;
                 }
@@ -177,6 +181,12 @@ public class AutoClickService extends AccessibilityService {
             }
         };
         handler.post(poll);
+    }
+
+    /** 手势派发是异步的，稍等 800ms 再弹出结果提示，确保点击已生效。 */
+    private void notifyResult(String msg) {
+        handler.postDelayed(() -> NotificationHelper.notifyBrief(AutoClickService.this,
+                NotificationHelper.NOTIF_ID_STATUS + 1, msg), 800);
     }
 
     /**
