@@ -267,7 +267,7 @@ public class MainActivity extends AppCompatActivity {
                     + "ms  裕度 " + e.bufferMs + "ms\n"
                     + "    " + e.detail + "  → " + res + "（点击切换：成功→失败→成功）");
             row.setPadding(12, 8, 12, 8);
-            row.setBackgroundResource(android.R.drawable.listitem_background);
+            row.setBackground(new android.graphics.drawable.ColorDrawable(0xFFE8E8E8));
             row.setOnClickListener(v -> {
                 int next;
                 if (cur == LogStore.RESULT_UNKNOWN || cur == LogStore.RESULT_FAILURE) {
