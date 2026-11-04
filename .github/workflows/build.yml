@@ -19,11 +19,16 @@ jobs:
         run: |
           COMMIT_COUNT=$(git rev-list --count HEAD)
           SHORT_SHA=$(git rev-parse --short HEAD)
+          # versionCode 用「构建时间分钟数」保证每次构建严格递增，覆盖安装不会失败；
+          # 若担心回退，可叠加提交数。这里取两者较大者作为单调递增的版本码。
+          BUILD_TS=$(date -u +%s)
+          VERSION_CODE=$((BUILD_TS / 60 + COMMIT_COUNT * 100000))
           echo "commit_count=$COMMIT_COUNT" >> $GITHUB_OUTPUT
           echo "short_sha=$SHORT_SHA" >> $GITHUB_OUTPUT
-          # 写入版本号属性文件（versionCode 基于提交总数，每次构建递增）
-          printf 'versionCode=%d\nversionName=1.%d.%s\n' "$COMMIT_COUNT" "$COMMIT_COUNT" "$SHORT_SHA" > "$GITHUB_WORKSPACE/version.properties"
-          echo "versionCode=$COMMIT_COUNT, versionName=1.$COMMIT_COUNT.$SHORT_SHA"
+          echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
+          # 写入版本号属性文件（versionCode 每次构建严格递增，保证覆盖安装成功）
+          printf 'versionCode=%d\nversionName=1.%d.%s\n' "$VERSION_CODE" "$COMMIT_COUNT" "$SHORT_SHA" > "$GITHUB_WORKSPACE/version.properties"
+          echo "versionCode=$VERSION_CODE, versionName=1.$COMMIT_COUNT.$SHORT_SHA"
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4

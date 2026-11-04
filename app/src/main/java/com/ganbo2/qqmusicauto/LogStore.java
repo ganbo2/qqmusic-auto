@@ -106,6 +106,73 @@ public class LogStore {
         return out;
     }
 
+    /** 导出全部日志为 JSON 字符串（用于备份/迁移）。 */
+    public static String exportJson(Context c) {
+        List<Entry> list = list(c);
+        JSONArray arr = new JSONArray();
+        for (Entry e : list) {
+            JSONObject o = new JSONObject();
+            try {
+                o.put("id", e.id);
+                o.put("realTimeMs", e.realTimeMs);
+                o.put("offsetMs", e.offsetMs);
+                o.put("bufferMs", e.bufferMs);
+                o.put("result", e.result);
+                o.put("detail", e.detail == null ? "" : e.detail);
+                arr.put(o);
+            } catch (Exception ex) {
+                // skip
+            }
+        }
+        return arr.toString();
+    }
+
+    /**
+     * 从 JSON 导入日志：与现有日志合并（跳过重复 id），自动追加新 id。
+     * 返回导入的条数。
+     */
+    public static int importJson(Context c, String json) {
+        try {
+            JSONArray arr = new JSONArray(json);
+            List<Entry> list = list(c);
+            List<Entry> toAdd = new ArrayList<>();
+            for (int i = 0; i < arr.length(); i++) {
+                JSONObject o = arr.getJSONObject(i);
+                Entry e = new Entry();
+                e.id = o.getLong("id");
+                e.realTimeMs = o.getLong("realTimeMs");
+                e.offsetMs = o.getLong("offsetMs");
+                e.bufferMs = o.optInt("bufferMs", 0);
+                e.result = o.optInt("result", RESULT_UNKNOWN);
+                e.detail = o.optString("detail", "");
+                // 检查是否已存在
+                boolean exists = false;
+                for (Entry ex : list) {
+                    if (ex.id == e.id) { exists = true; break; }
+                }
+                if (!exists) toAdd.add(e);
+            }
+            // 分配新 id，避免冲突
+            long maxId = list.isEmpty() ? 0 : list.get(list.size() - 1).id;
+            for (Entry e : toAdd) {
+                maxId = Math.max(maxId, e.id);
+            }
+            for (Entry e : toAdd) {
+                e.id = ++maxId;
+                list.add(e);
+            }
+            // 限制最大条数
+            while (list.size() > MAX) {
+                list.remove(0);
+            }
+            save(c, list);
+            return toAdd.size();
+        } catch (Exception ex) {
+            android.util.Log.e("LogStore", "import failed", ex);
+            return 0;
+        }
+    }
+
     private static void save(Context c, List<Entry> list) {
         try {
             JSONArray arr = new JSONArray();

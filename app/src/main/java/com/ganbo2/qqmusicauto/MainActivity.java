@@ -4,8 +4,10 @@ import android.Manifest;
 import android.app.TimePickerDialog;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.PackageInfo;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.Settings;
@@ -22,6 +24,9 @@ import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
 
+import java.io.File;
+import java.io.FileWriter;
+import java.io.InputStream;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -47,6 +52,7 @@ public class MainActivity extends AppCompatActivity {
     private EditText etBuffer;
     private LinearLayout containerLog;
     private TextView tvCountdown;
+    private TextView tvVersion;
     private final List<String> times = new ArrayList<>();
     private final Handler countdownHandler = new Handler(Looper.getMainLooper());
     private final Runnable countdownTick = new Runnable() {
@@ -59,6 +65,28 @@ public class MainActivity extends AppCompatActivity {
 
     private final ActivityResultLauncher<String> notifPermLauncher =
             registerForActivityResult(new ActivityResultContracts.RequestPermission(), granted -> {});
+
+    private final ActivityResultLauncher<String> importLogLauncher =
+            registerForActivityResult(new ActivityResultContracts.GetContent(), uri -> {
+                if (uri == null) return;
+                try {
+                    InputStream in = getContentResolver().openInputStream(uri);
+                    if (in == null) {
+                        Toast.makeText(this, "无法读取文件", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(in));
+                    StringBuilder sb = new StringBuilder();
+                    String line;
+                    while ((line = reader.readLine()) != null) sb.append(line);
+                    reader.close();
+                    int n = LogStore.importJson(this, sb.toString());
+                    renderLog();
+                    Toast.makeText(this, "成功恢复 " + n + " 条日志", Toast.LENGTH_SHORT).show();
+                } catch (Exception e) {
+                    Toast.makeText(this, "恢复失败：" + e.getMessage(), Toast.LENGTH_SHORT).show();
+                }
+            });
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -75,6 +103,15 @@ public class MainActivity extends AppCompatActivity {
         etBuffer = findViewById(R.id.etBuffer);
         containerLog = findViewById(R.id.containerLog);
         tvCountdown = findViewById(R.id.tvCountdown);
+        tvVersion = findViewById(R.id.tvVersion);
+
+        // 显示版本号
+        try {
+            PackageInfo pi = getPackageManager().getPackageInfo(getPackageName(), 0);
+            tvVersion.setText("版本：" + pi.versionName + " (v" + pi.versionCode + ")");
+        } catch (Exception ex) {
+            tvVersion.setText("版本：未知");
+        }
 
         SharedPreferences sp = Prefs.get(this);
         for (String t : AlarmScheduler.parseTimes(Prefs.getTimes(this))) times.add(t);
@@ -102,6 +139,8 @@ public class MainActivity extends AppCompatActivity {
             renderLog();
             Toast.makeText(this, "日志已清空", Toast.LENGTH_SHORT).show();
         });
+        findViewById(R.id.btnExportLog).setOnClickListener(v -> exportLogs());
+        findViewById(R.id.btnImportLog).setOnClickListener(v -> importLogs());
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
@@ -370,5 +409,28 @@ public class MainActivity extends AppCompatActivity {
             });
             containerLog.addView(row);
         }
+    }
+
+    /** 备份日志到下载目录，方便卸载前导出、重装后恢复。 */
+    private void exportLogs() {
+        try {
+            String json = LogStore.exportJson(this);
+            File dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+            File file = new File(dir, "qqmusic_log_backup_" + System.currentTimeMillis() + ".json");
+            FileWriter fw = new FileWriter(file);
+            fw.write(json);
+            fw.close();
+            Toast.makeText(this, "已备份到 " + file.getAbsolutePath(), Toast.LENGTH_LONG).show();
+        } catch (Exception e) {
+            Toast.makeText(this, "备份失败：" + e.getMessage(), Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    /** 从文件恢复日志（合并模式，不覆盖现有日志）。 */
+    private void importLogs() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("*/*");
+        importLogLauncher.launch(intent.getType());
     }
 }
