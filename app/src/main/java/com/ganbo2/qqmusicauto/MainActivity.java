@@ -268,11 +268,11 @@ public class MainActivity extends AppCompatActivity {
         try {
             bufferMs = Integer.parseInt(etBuffer.getText().toString().trim());
         } catch (NumberFormatException ex) {
-            Toast.makeText(this, "裕度必须是数字（毫秒，0~5000）", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "裕度必须是数字（毫秒，-5000~5000）", Toast.LENGTH_SHORT).show();
             return;
         }
-        if (bufferMs < 0 || bufferMs > 5000) {
-            Toast.makeText(this, "裕度必须在 0~5000 毫秒之间", Toast.LENGTH_SHORT).show();
+        if (bufferMs < -5000 || bufferMs > 5000) {
+            Toast.makeText(this, "裕度必须在 -5000~5000 毫秒之间（负数=提前点击）", Toast.LENGTH_SHORT).show();
             return;
         }
 
@@ -306,7 +306,8 @@ public class MainActivity extends AppCompatActivity {
                 updateStatus(fOffset);
                 Toast.makeText(MainActivity.this,
                         "已启用 " + times.size() + " 个定时点击（校时偏差 " + fOffset
-                                + "ms，到点后延迟 " + bufferMs + "ms 再点）",
+                                + "ms，" + (bufferMs < 0 ? "提前 " + Math.abs(bufferMs) + "ms 点击" : "到点后延迟 " + bufferMs + "ms 再点")
+                                + "）",
                         Toast.LENGTH_LONG).show();
             });
         }).start();

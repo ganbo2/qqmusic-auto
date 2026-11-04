@@ -8,3 +8,7 @@
 .externalNativeBuild
 .cxx
 /app-debug/
+downloaded-apk/
+*.apk
+build/
+local.properties

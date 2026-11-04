@@ -6,12 +6,21 @@ android {
     namespace 'com.ganbo2.qqmusicauto'
     compileSdk 34
 
+    // 读取版本号属性文件（由 GitHub Actions 动态生成）
+    def versionProps = new Properties()
+    def versionFile = rootProject.file('version.properties')
+    if (versionFile.exists()) {
+        versionFile.withInputStream { versionProps.load(it) }
+    }
+    def verCode = versionProps.getProperty('versionCode', '1').toInteger()
+    def verName = versionProps.getProperty('versionName', '1.0')
+
     defaultConfig {
         applicationId "com.ganbo2.qqmusicauto"
         minSdk 24
         targetSdk 34
-        versionCode 1
-        versionName "1.0"
+        versionCode verCode
+        versionName verName
     }
 
     buildTypes {

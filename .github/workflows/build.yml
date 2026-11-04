@@ -11,6 +11,19 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compute version
+        id: version
+        run: |
+          COMMIT_COUNT=$(git rev-list --count HEAD)
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          echo "commit_count=$COMMIT_COUNT" >> $GITHUB_OUTPUT
+          echo "short_sha=$SHORT_SHA" >> $GITHUB_OUTPUT
+          # 写入版本号属性文件（versionCode 基于提交总数，每次构建递增）
+          printf 'versionCode=%d\nversionName=1.%d.%s\n' "$COMMIT_COUNT" "$COMMIT_COUNT" "$SHORT_SHA" > "$GITHUB_WORKSPACE/version.properties"
+          echo "versionCode=$COMMIT_COUNT, versionName=1.$COMMIT_COUNT.$SHORT_SHA"
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4

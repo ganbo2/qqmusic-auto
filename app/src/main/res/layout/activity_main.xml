@@ -120,14 +120,14 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="10dp"
-            android:text="到点后延迟（毫秒）：到点再等这么久才点击。0 = 整点立刻点；数值越大越晚点、越不抢跑。默认 300。" />
+            android:text="到点后延迟（毫秒）：正数=到点再等这么久才点击（越晚越不抢跑）；负数=提前这么久点击（抢跑，适合名额开放前就点）；0=整点立刻点。默认 300。" />
 
         <EditText
             android:id="@+id/etBuffer"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:inputType="number"
-            android:hint="300（0~5000）" />
+            android:inputType="number|textPassword"
+            android:hint="300（-5000~5000，负数=提前点击）" />
 
         <Button
             android:id="@+id/btnSave"
@@ -184,9 +184,11 @@
         <ScrollView
             android:id="@+id/logScroll"
             android:layout_width="match_parent"
-            android:layout_height="260dp"
+            android:layout_height="480dp"
             android:layout_marginTop="6dp"
             android:background="#F7F7F7"
+            android:scrollbars="vertical"
+            android:scrollbarSize="6dp"
             android:padding="8dp">
 
             <LinearLayout
