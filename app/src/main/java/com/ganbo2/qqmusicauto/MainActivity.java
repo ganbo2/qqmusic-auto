@@ -7,7 +7,6 @@ import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
 import android.os.Build;
 import android.os.Bundle;
-import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.Settings;
@@ -24,8 +23,6 @@ import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
 
-import java.io.File;
-import java.io.FileWriter;
 import java.io.InputStream;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -85,6 +82,26 @@ public class MainActivity extends AppCompatActivity {
                     Toast.makeText(this, "成功恢复 " + n + " 条日志", Toast.LENGTH_SHORT).show();
                 } catch (Exception e) {
                     Toast.makeText(this, "恢复失败：" + e.getMessage(), Toast.LENGTH_SHORT).show();
+                }
+            });
+
+    // 用系统「另存为」写出备份，走 SAF，无需任何存储权限，
+    // 避免国产 ROM 上直接写公共 Download 目录被分区存储拒绝。
+    private final ActivityResultLauncher<String> exportLogLauncher =
+            registerForActivityResult(new ActivityResultContracts.CreateDocument("application/json"), uri -> {
+                if (uri == null) return;
+                try {
+                    java.io.OutputStream out = getContentResolver().openOutputStream(uri);
+                    if (out == null) {
+                        Toast.makeText(this, "无法创建文件", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    out.write(LogStore.exportJson(this).getBytes("UTF-8"));
+                    out.flush();
+                    out.close();
+                    Toast.makeText(this, "已备份日志，记住保存位置，重装后可恢复", Toast.LENGTH_LONG).show();
+                } catch (Exception e) {
+                    Toast.makeText(this, "备份失败：" + e.getMessage(), Toast.LENGTH_SHORT).show();
                 }
             });
 
@@ -412,19 +429,9 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    /** 备份日志到下载目录，方便卸载前导出、重装后恢复。 */
+    /** 备份日志：弹出系统「另存为」，由用户选保存位置（建议 Download）。 */
     private void exportLogs() {
-        try {
-            String json = LogStore.exportJson(this);
-            File dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
-            File file = new File(dir, "qqmusic_log_backup_" + System.currentTimeMillis() + ".json");
-            FileWriter fw = new FileWriter(file);
-            fw.write(json);
-            fw.close();
-            Toast.makeText(this, "已备份到 " + file.getAbsolutePath(), Toast.LENGTH_LONG).show();
-        } catch (Exception e) {
-            Toast.makeText(this, "备份失败：" + e.getMessage(), Toast.LENGTH_SHORT).show();
-        }
+        exportLogLauncher.launch("qqmusic_log_backup_" + System.currentTimeMillis() + ".json");
     }
 
     /** 从文件恢复日志（合并模式，不覆盖现有日志）。 */
