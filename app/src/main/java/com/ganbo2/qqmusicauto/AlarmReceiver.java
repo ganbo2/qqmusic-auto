@@ -11,7 +11,10 @@ import android.util.Log;
 import java.util.List;
 
 /**
- * 闹钟触发：先为同一个时间点（用 NTP 偏差）重排次日，再触发点击。
+ * 闹钟触发：先为同一个时间点重排次日，再触发点击。
+ * 重排用「本次真实触发时刻 +24h」，不重新按当前时间推算，
+ * 避免负裕度（提前点击）时排出一个已过去的时间，导致闹钟立即二次触发、
+ * 一次定时出现多条日志 / 连续多次点击。
  * 默认路径（不自动打开 App）：直接发广播给无障碍服务，时间到「零等待」立即点击。
  * 若用户勾选「自动打开 QQ音乐」，才走前台服务去启动 App。
  */
@@ -29,6 +32,7 @@ public class AlarmReceiver extends BroadcastReceiver {
             wl.acquire(5000);
         }
         int index = intent.getIntExtra(AlarmScheduler.EXTRA_INDEX, -1);
+        long firedRealMs = intent.getLongExtra(AlarmScheduler.EXTRA_FIRE_REAL_MS, 0L);
 
         if (index >= 0) {
             List<String> times = AlarmScheduler.parseTimes(Prefs.getTimes(context));
@@ -36,7 +40,12 @@ public class AlarmReceiver extends BroadcastReceiver {
                 AlarmManager am = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
                 if (am != null) {
                     long offset = Prefs.getOffset(context);
-                    AlarmScheduler.scheduleOne(context, am, index, times.get(index), offset);
+                    if (firedRealMs > 0L) {
+                        // 精确 +24h 重排，避免负裕度时排出「过去时间」导致闹钟立即二次触发
+                        AlarmScheduler.scheduleNextDay(context, am, index, firedRealMs, offset);
+                    } else {
+                        AlarmScheduler.scheduleOne(context, am, index, times.get(index), offset);
+                    }
                 }
             }
         }

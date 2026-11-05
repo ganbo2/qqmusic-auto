@@ -42,14 +42,21 @@ public class AutoClickService extends AccessibilityService {
     private static final String TAG = "AutoClickService";
 
     private boolean running = false;
-    private boolean isTest = false;
     private Handler handler;
     private BroadcastReceiver receiver;
+    /** 上次「定时」触发的单调时钟，用于短时间去重，防止重复点击产生多条日志。 */
+    private long lastTriggerElapsed = 0L;
+    private static final long DEDUP_WINDOW_MS = 5000L;
 
     @Override
     public void onServiceConnected() {
         super.onServiceConnected();
         handler = new Handler(Looper.getMainLooper());
+        // 系统可能多次回调 onServiceConnected，必须先注销旧的接收器，
+        // 否则会累积多个实例，一次广播被处理多次 → 点击多次、日志多条。
+        if (receiver != null) {
+            try { unregisterReceiver(receiver); } catch (Exception ignored) {}
+        }
         receiver = new BroadcastReceiver() {
             @Override
             public void onReceive(Context context, Intent intent) {
@@ -84,15 +91,18 @@ public class AutoClickService extends AccessibilityService {
 
     private void startAutoClick(boolean test) {
         if (running) return;
-        running = true;
-        isTest = test;
-        Log.d(TAG, "startAutoClick" + (test ? " (test)" : ""));
-        executeSteps(new Runnable() {
-            @Override
-            public void run() {
-                startTargetPolling();
+        if (!test) {
+            // 5 秒内的重复定时触发一律忽略（测试点击不受限，方便反复调试）
+            long now = android.os.SystemClock.elapsedRealtime();
+            if (now - lastTriggerElapsed < DEDUP_WINDOW_MS) {
+                Log.d(TAG, "duplicate trigger ignored (within " + DEDUP_WINDOW_MS + "ms)");
+                return;
             }
-        });
+            lastTriggerElapsed = now;
+        }
+        running = true;
+        Log.d(TAG, "startAutoClick" + (test ? " (test)" : ""));
+        executeSteps(() -> startTargetPolling(test));
     }
 
     /** 依次执行导航步骤，全部完成后回调 onDone。 */
@@ -140,7 +150,7 @@ public class AutoClickService extends AccessibilityService {
     }
 
     /** 轮询查找目标并点击。策略见类注释。 */
-    private void startTargetPolling() {
+    private void startTargetPolling(final boolean test) {
         final String target = Prefs.getTarget(this);
         final boolean useCoord = Prefs.getUseCoord(this);
         final int xPct = Prefs.getCoordX(this);
@@ -151,7 +161,7 @@ public class AutoClickService extends AccessibilityService {
             tapCoordinatePercent(xPct, yPct);
             Log.d(TAG, "coord-mode tap (" + xPct + "%," + yPct + "%)");
             notifyResult("已按坐标点击 (" + xPct + "%," + yPct + "%)");
-            recordLog("坐标点击 (" + xPct + "%," + yPct + "%)");
+            recordLog("坐标点击 (" + xPct + "%," + yPct + "%)", test);
             running = false;
             return;
         }
@@ -165,7 +175,7 @@ public class AutoClickService extends AccessibilityService {
                 if (clickNodeByText(target)) {
                     Log.d(TAG, "clicked target by text: " + target);
                     notifyResult("已点击「" + target + "」");
-                    recordLog("文字点击「" + target + "」");
+                    recordLog("文字点击「" + target + "」", test);
                     running = false;
                     return;
                 }
@@ -174,14 +184,14 @@ public class AutoClickService extends AccessibilityService {
                     Log.d(TAG, "text not found, fallback to coord tap (" + xPct + "%," + yPct + "%)");
                     tapCoordinatePercent(xPct, yPct);
                     notifyResult("文字未找到，已按坐标点击 (" + xPct + "%," + yPct + "%)");
-                    recordLog("文字未找到，坐标兜底 (" + xPct + "%," + yPct + "%)");
+                    recordLog("文字未找到，坐标兜底 (" + xPct + "%," + yPct + "%)", test);
                     running = false;
                     return;
                 }
                 if (tries[0] >= maxTries) {
                     Log.d(TAG, "target not found within timeout: " + target);
                     notifyResult("未找到「" + target + "」按钮，请确认页面已打开");
-                    recordLog("未找到「" + target + "」按钮（超时）");
+                    recordLog("未找到「" + target + "」按钮（超时）", test);
                     running = false;
                     return;
                 }
@@ -201,14 +211,25 @@ public class AutoClickService extends AccessibilityService {
      * 记录一条点击日志（真实触发时间、校时偏差、裕度），并弹出「请标记结果」通知。
      * 通知带 ✓成功 / ✗失败 按钮，点击即写回结果。
      */
-    private void recordLog(String detail) {
-        if (isTest) {
+    private void recordLog(String detail, boolean test) {
+        if (test) {
             Log.d(TAG, "test trigger, skip recordLog");
             return;
         }
         try {
             long offset = Prefs.getOffset(this);
             long realNow = NtpClient.realNowMs(offset);
+            // 最后一道防线：与上一条日志间隔过短（<5秒）视为重复触发，不再落库。
+            // 时间点最小粒度是分钟，正常定时任务不会落在这个窗口内，不会误伤。
+            List<LogStore.Entry> existing = LogStore.list(this);
+            if (!existing.isEmpty()) {
+                LogStore.Entry last = existing.get(existing.size() - 1);
+                if (Math.abs(realNow - last.realTimeMs) < DEDUP_WINDOW_MS) {
+                    Log.d(TAG, "duplicate log suppressed (delta="
+                            + Math.abs(realNow - last.realTimeMs) + "ms)");
+                    return;
+                }
+            }
             int buffer = Prefs.getBufferMs(this);
             long logId = LogStore.add(this, realNow, offset, buffer, detail);
             final String body = "已记录日志#" + logId + "（点击 " + detail + "）\n"

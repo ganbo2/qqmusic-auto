@@ -210,8 +210,9 @@ public class MainActivity extends AppCompatActivity {
                 cal.set(java.util.Calendar.SECOND, 0);
                 cal.set(java.util.Calendar.MILLISECOND, 0);
                 long target = cal.getTimeInMillis();
-                if (target <= nowReal) target += 86400_000L; // 过了就取下一天
                 target += buffer;
+                // 裕度加完后再判断是否已过去（负裕度时可能落回过去），过了就取次日
+                while (target <= nowReal) target += 86400_000L;
                 if (target < best) best = target;
             }
             if (best == Long.MAX_VALUE) {
@@ -340,7 +341,7 @@ public class MainActivity extends AppCompatActivity {
             Prefs.saveOffset(MainActivity.this, offset);
             final long fOffset = offset;
             runOnUiThread(() -> {
-                AlarmScheduler.cancelAll(MainActivity.this);
+                // scheduleAll 内部会先清空所有历史闹钟再重新注册
                 AlarmScheduler.scheduleAll(MainActivity.this, fOffset);
                 updateStatus(fOffset);
                 Toast.makeText(MainActivity.this,
