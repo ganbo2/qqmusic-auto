@@ -26,12 +26,29 @@
             android:padding="10dp"
             android:layout_marginBottom="6dp" />
 
-        <Button
-            android:id="@+id/btnResync"
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginBottom="4dp"
-            android:text="重新校时（可多次点，对比偏差是否稳定）" />
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/btnResync"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:textSize="12sp"
+                android:text="重新校时" />
+
+            <Button
+                android:id="@+id/btnResetOffset"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="8dp"
+                android:textSize="12sp"
+                android:text="偏差归零并重排" />
+        </LinearLayout>
 
         <CheckBox
             android:id="@+id/cbUseSystemTime"

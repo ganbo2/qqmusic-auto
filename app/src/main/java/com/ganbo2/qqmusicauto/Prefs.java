@@ -20,6 +20,13 @@ public class Prefs {
     public static final String KEY_SYNC_DETAIL = "ntp_sync_detail";
     public static final String KEY_SYNC_SPREAD = "ntp_sync_spread";
     public static final String KEY_SYNC_SAMPLES = "ntp_sync_samples";
+    /** 最近一次「实测」得到的原始偏差：仅供展示，不等于排程采用的偏差。 */
+    public static final String KEY_MEASURE_OFFSET = "last_measure_offset";
+    public static final String KEY_MEASURE_AT = "last_measure_at";
+    public static final String KEY_MEASURE_SOURCE = "last_measure_source";
+    public static final String KEY_MEASURE_OK = "last_measure_ok";
+    /** 当前排程采用的偏差是怎么来的（人话说明）。 */
+    public static final String KEY_OFFSET_REASON = "offset_reason";
     /** true = 不做网络校时，直接用手机系统时钟（偏差恒为 0）。 */
     public static final String KEY_USE_SYSTEM_TIME = "use_system_time";
     public static final String KEY_USE_COORD = "use_coord";
@@ -93,6 +100,41 @@ public class Prefs {
 
     public static int getSyncSampleCount(Context c) {
         return get(c).getInt(KEY_SYNC_SAMPLES, 0);
+    }
+
+    /** 记录一次校时尝试：实测原始偏差、来源、时刻、是否真的拿到结果。 */
+    public static void saveMeasure(Context c, boolean attempted, long offsetMs,
+                                   String source, long atMs) {
+        get(c).edit()
+                .putBoolean(KEY_MEASURE_OK, attempted)
+                .putLong(KEY_MEASURE_OFFSET, offsetMs)
+                .putString(KEY_MEASURE_SOURCE, source)
+                .putLong(KEY_MEASURE_AT, atMs)
+                .apply();
+    }
+
+    public static boolean wasMeasureAttempted(Context c) {
+        return get(c).getBoolean(KEY_MEASURE_OK, false);
+    }
+
+    public static long getMeasuredOffset(Context c) {
+        return get(c).getLong(KEY_MEASURE_OFFSET, 0);
+    }
+
+    public static long getMeasuredAt(Context c) {
+        return get(c).getLong(KEY_MEASURE_AT, 0);
+    }
+
+    public static String getMeasuredSource(Context c) {
+        return get(c).getString(KEY_MEASURE_SOURCE, "尚未校时");
+    }
+
+    public static void saveOffsetReason(Context c, String reason) {
+        get(c).edit().putString(KEY_OFFSET_REASON, reason).apply();
+    }
+
+    public static String getOffsetReason(Context c) {
+        return get(c).getString(KEY_OFFSET_REASON, "");
     }
 
     public static boolean getUseSystemTime(Context c) {

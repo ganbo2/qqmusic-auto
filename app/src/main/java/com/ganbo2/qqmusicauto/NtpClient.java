@@ -50,8 +50,8 @@ public class NtpClient {
     private static final long GOOD_RTT_MS = 120;
     /** RTT 高于此值的 NTP 样本不参与中位数计算。 */
     public static final long RELIABLE_RTT_MS = 300;
-    /** HTTP 兜底含 DNS/TLS 握手，天然更慢，单独放宽；毫秒级时间戳仍优于「干脆不补偿」。 */
-    private static final long HTTP_MAX_RTT_MS = 1200;
+    /** HTTP 兜底含 DNS/TLS 握手，天然更慢，放宽以便至少能进入诊断明细。 */
+    private static final long HTTP_MAX_RTT_MS = 2500;
     /** 多个独立源的 offset 极差超过此值，认为链路不对称，结果不可信。 */
     private static final long CONSISTENT_SPREAD_MS = 200;
 
@@ -128,34 +128,39 @@ public class NtpClient {
             if (s.rttMs <= limit && !s.secondPrecision) good.add(s);
         }
 
+        // 只有 NTP 样本用了正确的「往返中点」补偿，才可能作为精确偏差；
+        // HTTP 兜底拿到的是区间下界，天然低估（少了下行传输时间），
+        // 直接采用会让闹钟系统性偏晚，因此只作诊断、不参与排程。
+        List<Result> ntpGood = new ArrayList<>();
+        for (Result s : good) {
+            if (!s.source.startsWith("HTTP")) ntpGood.add(s);
+        }
+
         Result best;
-        if (good.size() >= 2) {
+        if (ntpGood.size() >= 2) {
             List<Long> offs = new ArrayList<>();
-            for (Result s : good) offs.add(s.offsetMs);
+            for (Result s : ntpGood) offs.add(s.offsetMs);
             java.util.Collections.sort(offs);
             long median = offs.get(offs.size() / 2);
             long spread = offs.get(offs.size() - 1) - offs.get(0);
             // 取 offset 最接近中位数的样本作为 RTT / 来源的代表
-            Result rep = good.get(0);
-            for (Result s : good) {
+            Result rep = ntpGood.get(0);
+            for (Result s : ntpGood) {
                 if (Math.abs(s.offsetMs - median) < Math.abs(rep.offsetMs - median)) rep = s;
             }
             best = rep;
             best.offsetMs = median;
             best.spreadMs = spread;
-            best.sampleCount = good.size();
+            best.sampleCount = ntpGood.size();
             best.reliable = spread <= CONSISTENT_SPREAD_MS;
-        } else if (good.size() == 1) {
-            best = good.get(0);
-            best.spreadMs = -1;
-            best.sampleCount = 1;
-            best.reliable = true;
         } else {
-            // 一个可信样本都没有：仍返回明细供诊断，但标记不可用
-            samples.sort((a, b) -> Long.compare(a.rttMs, b.rttMs));
-            best = samples.get(0);
+            // NTP 样本不足两个：挑一个代表样本把明细带出去，但一律标记不可信，
+            // 由 TimePolicy 回退到手机系统时间（偏差 0），绝不拿单源 HTTP 下界去排程。
+            List<Result> pool = good.isEmpty() ? samples : good;
+            pool.sort((a, b) -> Long.compare(a.rttMs, b.rttMs));
+            best = pool.get(0);
             best.spreadMs = -1;
-            best.sampleCount = samples.size();
+            best.sampleCount = pool.size();
             best.reliable = false;
         }
         best.detail = detail.toString();
@@ -214,7 +219,9 @@ public class NtpClient {
      *
      * <p>改用区间下界：时间戳必然早于客户端收到响应，因此
      * {@code trueOffset >= serverMs - (t0 + rtt)}。多次采样取最紧的下界，
-     * 得到不会虚高的估计（残余误差仅为下行传输时间，几十~几百毫秒）。</p>
+     * 得到不会虚高的估计（但会低估一个下行传输时间，几十~几百毫秒）。
+     * 因此该结果只能用于诊断「系统时钟是否明显偏慢」，不能当精确偏差采用；
+     * 直接采用会让闹钟系统性偏晚，见 {@link NtpClient#sync()} 的可靠性判定。</p>
      */
     private static Result queryHttp(String urlStr) throws Exception {
         String host = new URL(urlStr).getHost();
