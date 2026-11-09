@@ -11,6 +11,7 @@ import java.net.InetAddress;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -18,13 +19,17 @@ import java.util.concurrent.TimeUnit;
  *
  * <p>关键：单次 NTP 的 offset 依赖「上下行对称」假设，误差上限约为往返延迟的一半。
  * 跨境服务器或移动网络下 RTT 可达数秒，算出的偏差会虚高上千毫秒并直接影响点击时刻。
- * 因此这里改为：国内节点优先、多源采样、按 RTT 择优，并把来源与 RTT 一并返回供界面展示。
- * UDP 123 被运营商封锁时，降级到返回毫秒时间戳的 HTTPS 接口。</p>
+ * 因此这里：国内节点优先、多源采样、按 RTT 过滤后取中位数，并给出「多源一致性」指标。</p>
+ *
+ * <p>注意：offset 大（比如 +1800ms）本身不代表校时不准，它通常就是手机系统时钟真的慢了
+ * 1.8 秒。判断是否可信要看 RTT 与多源极差，而不是看偏差数值大小。</p>
+ *
+ * <p>UDP 123 被运营商封锁时，降级到返回毫秒时间戳的 HTTPS 接口。</p>
  */
 public class NtpClient {
     private static final String TAG = "NtpClient";
 
-    // 国内节点排前面：拿到低 RTT 样本即可提前结束，不必再试跨境链路
+    // 国内节点排前面
     private static final String[] NTP_SERVERS = {
             "ntp.aliyun.com",
             "cn.ntp.org.cn",
@@ -38,17 +43,24 @@ public class NtpClient {
     private static final int NTP_PORT = 123;
     private static final int TIMEOUT = 2000;
     private static final long OFFSET_1900_TO_1970 = 2208988800L;
-    /** RTT 低于此值就足够精确，无需继续尝试其它服务器。 */
+    /** RTT 低于此值算低延迟样本；凑够 3 个即可停止，避免无谓等待。 */
     private static final long GOOD_RTT_MS = 120;
-    /** RTT 高于此值的样本视为不可信（误差可能达数百毫秒）。 */
+    /** RTT 高于此值的 NTP 样本不参与中位数计算。 */
     public static final long RELIABLE_RTT_MS = 300;
+    /** HTTP 兜底含 DNS/TLS 握手，天然更慢，单独放宽；毫秒级时间戳仍优于「干脆不补偿」。 */
+    private static final long HTTP_MAX_RTT_MS = 1200;
+    /** 多个独立源的 offset 极差超过此值，认为链路不对称，结果不可信。 */
+    private static final long CONSISTENT_SPREAD_MS = 200;
 
     public static class Result {
-        public long offsetMs;          // 真实时间 - 系统时间
-        public long rttMs;             // 本次校时往返延迟
-        public String source;          // 校时来源，用于界面展示
-        public boolean reliable;       // 该偏差是否可信
-        public boolean secondPrecision; // 兜底接口只给到秒，精度天然不足
+        public long offsetMs;           // 真实时间 - 系统时间
+        public long rttMs;              // 代表样本的往返延迟
+        public String source;           // 校时来源
+        public boolean reliable;        // 该偏差是否可用于排程
+        public boolean secondPrecision; // 兜底接口只给到秒
+        public long spreadMs = -1;      // 多源 offset 极差；-1 = 只有一个样本
+        public int sampleCount;         // 参与决策的样本数
+        public String detail = "";      // 每个源的明细，供界面诊断
     }
 
     /** 兼容旧调用：只要偏差值。 */
@@ -62,35 +74,91 @@ public class NtpClient {
         return System.currentTimeMillis() + offsetMs;
     }
 
-    /** 多源采样，返回 RTT 最小的那次；全部失败返回 null。 */
+    /**
+     * 多源采样：过滤高 RTT / 秒级样本后取 offset 中位数。
+     * 中位数可消除单个源因上下行不对称产生的偏差；多源极差用来判断结果是否自洽。
+     * 全部失败返回 null。
+     */
     public static Result sync() {
         List<Result> samples = new ArrayList<>();
+        int ntpFailures = 0;
         for (String server : NTP_SERVERS) {
             try {
                 Result r = queryNtp(server);
                 samples.add(r);
-                if (r.rttMs <= GOOD_RTT_MS) break;
+                long fast = 0;
+                for (Result s : samples) if (s.rttMs <= GOOD_RTT_MS) fast++;
+                if (fast >= 3) break;
             } catch (Exception e) {
+                ntpFailures++;
                 Log.w(TAG, "ntp failed: " + server + " -> " + e.getMessage());
             }
+            // 国内前两台都连不上，多半是 UDP 123 被运营商封了，不必再等跨境节点各 2 秒
+            if (ntpFailures >= 2 && samples.isEmpty()) break;
         }
-        if (samples.isEmpty()) {
+        // NTP 样本不足两个时，用 HTTP 补齐以便做交叉验证
+        if (samples.size() < 2) {
             for (String url : HTTP_FALLBACKS) {
                 try {
                     Result r = queryHttp(url);
                     samples.add(r);
-                    if (r.rttMs <= GOOD_RTT_MS && !r.secondPrecision) break;
+                    if (samples.size() >= 2) break;
                 } catch (Exception e) {
                     Log.w(TAG, "http time failed: " + url + " -> " + e.getMessage());
                 }
             }
         }
         if (samples.isEmpty()) return null;
-        samples.sort((a, b) -> Long.compare(a.rttMs, b.rttMs));
-        Result best = samples.get(0);
-        best.reliable = best.rttMs <= RELIABLE_RTT_MS && !best.secondPrecision;
+
+        // 先拼明细（后面会改动代表样本的 offsetMs，明细要保留各源原始值）
+        StringBuilder detail = new StringBuilder();
+        for (Result s : samples) {
+            if (detail.length() > 0) detail.append("\n");
+            detail.append(String.format(Locale.CHINA, "%s  %+dms / 往返%dms%s",
+                    s.source, s.offsetMs, s.rttMs,
+                    s.secondPrecision ? "（秒级）" : ""));
+        }
+
+        List<Result> good = new ArrayList<>();
+        for (Result s : samples) {
+            long limit = s.source.startsWith("HTTP") ? HTTP_MAX_RTT_MS : RELIABLE_RTT_MS;
+            if (s.rttMs <= limit && !s.secondPrecision) good.add(s);
+        }
+
+        Result best;
+        if (good.size() >= 2) {
+            List<Long> offs = new ArrayList<>();
+            for (Result s : good) offs.add(s.offsetMs);
+            java.util.Collections.sort(offs);
+            long median = offs.get(offs.size() / 2);
+            long spread = offs.get(offs.size() - 1) - offs.get(0);
+            // 取 offset 最接近中位数的样本作为 RTT / 来源的代表
+            Result rep = good.get(0);
+            for (Result s : good) {
+                if (Math.abs(s.offsetMs - median) < Math.abs(rep.offsetMs - median)) rep = s;
+            }
+            best = rep;
+            best.offsetMs = median;
+            best.spreadMs = spread;
+            best.sampleCount = good.size();
+            best.reliable = spread <= CONSISTENT_SPREAD_MS;
+        } else if (good.size() == 1) {
+            best = good.get(0);
+            best.spreadMs = -1;
+            best.sampleCount = 1;
+            best.reliable = true;
+        } else {
+            // 一个可信样本都没有：仍返回明细供诊断，但标记不可用
+            samples.sort((a, b) -> Long.compare(a.rttMs, b.rttMs));
+            best = samples.get(0);
+            best.spreadMs = -1;
+            best.sampleCount = samples.size();
+            best.reliable = false;
+        }
+        best.detail = detail.toString();
         Log.d(TAG, "best: " + best.source + " offset=" + best.offsetMs
-                + "ms rtt=" + best.rttMs + "ms reliable=" + best.reliable);
+                + "ms rtt=" + best.rttMs + "ms samples=" + best.sampleCount
+                + " spread=" + best.spreadMs + " reliable=" + best.reliable);
         return best;
     }
 

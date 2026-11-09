@@ -17,6 +17,9 @@ public class Prefs {
     public static final String KEY_SYNC_SOURCE = "ntp_sync_source";
     public static final String KEY_SYNC_RTT = "ntp_sync_rtt";
     public static final String KEY_SYNC_RELIABLE = "ntp_sync_reliable";
+    public static final String KEY_SYNC_DETAIL = "ntp_sync_detail";
+    public static final String KEY_SYNC_SPREAD = "ntp_sync_spread";
+    public static final String KEY_SYNC_SAMPLES = "ntp_sync_samples";
     public static final String KEY_USE_COORD = "use_coord";
     public static final String KEY_COORD_X = "coord_x";
     public static final String KEY_COORD_Y = "coord_y";
@@ -57,15 +60,37 @@ public class Prefs {
 
     /** 记录本次校时的来源与往返延迟，供界面判断偏差是否可信。 */
     public static void saveSyncInfo(Context c, String source, long rttMs, boolean reliable) {
+        saveSyncInfo(c, source, rttMs, reliable, "", -1, 0);
+    }
+
+    /** 完整诊断信息：各源明细、多源极差、参与决策的样本数。 */
+    public static void saveSyncInfo(Context c, String source, long rttMs, boolean reliable,
+                                    String detail, long spreadMs, int sampleCount) {
         get(c).edit()
                 .putString(KEY_SYNC_SOURCE, source)
                 .putLong(KEY_SYNC_RTT, rttMs)
                 .putBoolean(KEY_SYNC_RELIABLE, reliable)
+                .putString(KEY_SYNC_DETAIL, detail)
+                .putLong(KEY_SYNC_SPREAD, spreadMs)
+                .putInt(KEY_SYNC_SAMPLES, sampleCount)
                 .apply();
     }
 
     public static String getSyncSource(Context c) {
         return get(c).getString(KEY_SYNC_SOURCE, "尚未校时");
+    }
+
+    public static String getSyncDetail(Context c) {
+        return get(c).getString(KEY_SYNC_DETAIL, "");
+    }
+
+    /** -1 表示只有一个样本或从未校时。 */
+    public static long getSyncSpread(Context c) {
+        return get(c).getLong(KEY_SYNC_SPREAD, -1);
+    }
+
+    public static int getSyncSampleCount(Context c) {
+        return get(c).getInt(KEY_SYNC_SAMPLES, 0);
     }
 
     /** -1 表示从未成功校时。 */

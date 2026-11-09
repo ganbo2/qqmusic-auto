@@ -190,7 +190,7 @@ public class MainActivity extends AppCompatActivity {
         countdownHandler.removeCallbacks(countdownTick);
     }
 
-    /** 后台多源校时：择优样本写入配置，界面显示来源与往返延迟。 */
+    /** 后台多源校时：只有可信结果才覆盖偏差并用于排程；不可信时沿用上次可信值。 */
     private void refreshNetworkTime() {
         new Thread(() -> {
             NtpClient.Result res = NtpClient.sync();
@@ -203,10 +203,26 @@ public class MainActivity extends AppCompatActivity {
                 });
                 return;
             }
-            Prefs.saveOffset(MainActivity.this, res.offsetMs);
-            Prefs.saveSyncInfo(MainActivity.this, res.source, res.rttMs, res.reliable);
-            final long fOffset = res.offsetMs;
-            runOnUiThread(() -> updateStatus(fOffset));
+            // 诊断信息（各源明细）无论是否可信都刷新，方便用户判断偏差真假
+            Prefs.saveSyncInfo(MainActivity.this, res.source, res.rttMs, res.reliable,
+                    res.detail, res.spreadMs, res.sampleCount);
+            final boolean ok = res.reliable;
+            final long fOffset;
+            if (ok) {
+                Prefs.saveOffset(MainActivity.this, res.offsetMs);
+                fOffset = res.offsetMs;
+            } else {
+                fOffset = Prefs.getOffset(MainActivity.this); // 不让脏值污染排程
+            }
+            runOnUiThread(() -> {
+                updateStatus(fOffset);
+                if (!ok) {
+                    Toast.makeText(MainActivity.this,
+                            "本次校时不可信（往返过大或多源不一致），已沿用上次可信偏差 "
+                                    + fOffset + "ms；详见状态区明细",
+                            Toast.LENGTH_LONG).show();
+                }
+            });
         }).start();
     }
 
@@ -219,18 +235,36 @@ public class MainActivity extends AppCompatActivity {
         if (offset == 0) diff = "（未校时，暂用系统时间）";
 
         long rtt = Prefs.getSyncRtt(this);
+        long spread = Prefs.getSyncSpread(this);
+        int samples = Prefs.getSyncSampleCount(this);
         String sync;
         if (rtt < 0) {
             sync = "尚未成功校时";
-        } else if (Prefs.isSyncReliable(this)) {
-            sync = Prefs.getSyncSource(this) + " · 往返 " + rtt + "ms · 可信";
         } else {
-            sync = Prefs.getSyncSource(this) + " · 往返 " + rtt + "ms\n"
-                    + "注意：链路延迟过大，偏差可能不准，建议换网络重新校时";
+            String consist = samples >= 2
+                    ? " · " + samples + "源" + (spread >= 0 ? "极差 " + spread + "ms" : "")
+                    : " · 单源";
+            if (Prefs.isSyncReliable(this)) {
+                sync = Prefs.getSyncSource(this) + " · 往返 " + rtt + "ms" + consist + " · 可信";
+            } else {
+                sync = Prefs.getSyncSource(this) + " · 往返 " + rtt + "ms" + consist
+                        + "\n注意：链路延迟过大或多源不一致，本次结果未采用，排程沿用上次可信偏差";
+            }
         }
-        tvStatus.setText("网络北京时间：" + bj
-                + "\n与手机时钟偏差：" + diff
-                + "\n校时来源：" + sync);
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("网络北京时间：").append(bj)
+                .append("\n与手机时钟偏差：").append(diff)
+                .append("\n校时来源：").append(sync);
+        String detail = Prefs.getSyncDetail(this);
+        if (detail != null && !detail.isEmpty()) {
+            sb.append("\n各源实测：\n").append(detail);
+        }
+        if (Math.abs(offset) > 1000) {
+            sb.append("\n偏差较大：建议开启 系统设置→日期和时间→自动设置时间，")
+                    .append("避免排程期间系统时间被自动修正；只要上方显示「可信」，点击时刻不受影响");
+        }
+        tvStatus.setText(sb.toString());
     }
 
     /**
@@ -245,10 +279,13 @@ public class MainActivity extends AppCompatActivity {
         SimpleDateFormat sdf = new SimpleDateFormat("HH:mm:ss.SSS", Locale.CHINA);
         sdf.setTimeZone(TimeZone.getTimeZone("Asia/Shanghai"));
         String nowText = sdf.format(new Date(nowReal));
+        // 并列显示手机系统时钟，偏差真假肉眼可辨（两行差值应等于状态区的偏差值）
+        String sysText = sdf.format(new Date(System.currentTimeMillis()));
 
         // 计算最近一个尚未到来的触发时刻（含裕度）
         StringBuilder sb = new StringBuilder();
         sb.append("北京时间 ").append(nowText);
+        sb.append("\n手机时钟 ").append(sysText);
 
         List<String> times = AlarmScheduler.parseTimes(Prefs.getTimes(this));
         if (times.isEmpty()) {
@@ -398,15 +435,22 @@ public class MainActivity extends AppCompatActivity {
         new Thread(() -> {
             NtpClient.Result res = NtpClient.sync();
             final long fOffset;
-            final boolean synced;
+            final String note;
             if (res == null) {
                 fOffset = Prefs.getOffset(MainActivity.this);
-                synced = false;
+                note = "\n校时失败，沿用上次偏差";
             } else {
-                fOffset = res.offsetMs;
-                synced = true;
-                Prefs.saveOffset(MainActivity.this, res.offsetMs);
-                Prefs.saveSyncInfo(MainActivity.this, res.source, res.rttMs, res.reliable);
+                Prefs.saveSyncInfo(MainActivity.this, res.source, res.rttMs, res.reliable,
+                        res.detail, res.spreadMs, res.sampleCount);
+                if (res.reliable) {
+                    Prefs.saveOffset(MainActivity.this, res.offsetMs);
+                    fOffset = res.offsetMs;
+                    note = "";
+                } else {
+                    // 不可信样本不写入偏差，也不拿它排闹钟
+                    fOffset = Prefs.getOffset(MainActivity.this);
+                    note = "\n本次校时不可信，已沿用上次可信偏差排程";
+                }
             }
             runOnUiThread(() -> {
                 // scheduleAll 内部会先清空所有历史闹钟再重新注册
@@ -415,7 +459,7 @@ public class MainActivity extends AppCompatActivity {
                 Toast.makeText(MainActivity.this,
                         "已启用 " + times.size() + " 个定时点击（校时偏差 " + fOffset
                                 + "ms，" + (bufferMs < 0 ? "提前 " + Math.abs(bufferMs) + "ms 点击" : "到点后延迟 " + bufferMs + "ms 再点")
-                                + "）" + (synced ? "" : "\n校时失败，沿用上次偏差"),
+                                + "）" + note,
                         Toast.LENGTH_LONG).show();
             });
         }).start();

@@ -18,9 +18,11 @@ public class BootReceiver extends BroadcastReceiver {
             // 网络就绪后刷新 NTP 偏差并重排；若本次校时不可信，保留开机时用的旧偏差
             new Thread(() -> {
                 NtpClient.Result res = NtpClient.sync();
-                if (res != null && res.reliable) {
+                if (res == null) return;
+                Prefs.saveSyncInfo(context, res.source, res.rttMs, res.reliable,
+                        res.detail, res.spreadMs, res.sampleCount);
+                if (res.reliable) {
                     Prefs.saveOffset(context, res.offsetMs);
-                    Prefs.saveSyncInfo(context, res.source, res.rttMs, res.reliable);
                     AlarmScheduler.scheduleAll(context, res.offsetMs);
                 }
             }).start();
