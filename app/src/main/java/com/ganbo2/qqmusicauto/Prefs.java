@@ -14,6 +14,9 @@ public class Prefs {
     public static final String KEY_LAUNCH = "launch_app";
     public static final String KEY_STEPS = "steps";
     public static final String KEY_OFFSET = "ntp_offset";
+    public static final String KEY_SYNC_SOURCE = "ntp_sync_source";
+    public static final String KEY_SYNC_RTT = "ntp_sync_rtt";
+    public static final String KEY_SYNC_RELIABLE = "ntp_sync_reliable";
     public static final String KEY_USE_COORD = "use_coord";
     public static final String KEY_COORD_X = "coord_x";
     public static final String KEY_COORD_Y = "coord_y";
@@ -50,6 +53,28 @@ public class Prefs {
 
     public static void saveOffset(Context c, long off) {
         get(c).edit().putLong(KEY_OFFSET, off).apply();
+    }
+
+    /** 记录本次校时的来源与往返延迟，供界面判断偏差是否可信。 */
+    public static void saveSyncInfo(Context c, String source, long rttMs, boolean reliable) {
+        get(c).edit()
+                .putString(KEY_SYNC_SOURCE, source)
+                .putLong(KEY_SYNC_RTT, rttMs)
+                .putBoolean(KEY_SYNC_RELIABLE, reliable)
+                .apply();
+    }
+
+    public static String getSyncSource(Context c) {
+        return get(c).getString(KEY_SYNC_SOURCE, "尚未校时");
+    }
+
+    /** -1 表示从未成功校时。 */
+    public static long getSyncRtt(Context c) {
+        return get(c).getLong(KEY_SYNC_RTT, -1);
+    }
+
+    public static boolean isSyncReliable(Context c) {
+        return get(c).getBoolean(KEY_SYNC_RELIABLE, false);
     }
 
     /** 默认不导航：用户自己打开页面，时间到直接点。 */

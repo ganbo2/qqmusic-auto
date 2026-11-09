@@ -145,6 +145,10 @@ public class MainActivity extends AppCompatActivity {
         tickCountdown();
         countdownHandler.post(countdownTick);
 
+        findViewById(R.id.btnResync).setOnClickListener(v -> {
+            Toast.makeText(this, "正在多源校时...", Toast.LENGTH_SHORT).show();
+            refreshNetworkTime();
+        });
         findViewById(R.id.btnAccessibility).setOnClickListener(v ->
                 startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));
         findViewById(R.id.btnAddTime).setOnClickListener(v -> showTimePicker());
@@ -173,13 +177,22 @@ public class MainActivity extends AppCompatActivity {
         countdownHandler.removeCallbacks(countdownTick);
     }
 
-    /** 后台获取网络时间，更新状态栏并存储偏差。 */
+    /** 后台多源校时：择优样本写入配置，界面显示来源与往返延迟。 */
     private void refreshNetworkTime() {
         new Thread(() -> {
-            Long off = NtpClient.getOffsetMs();
-            long offset = (off == null) ? Prefs.getOffset(MainActivity.this) : off;
-            Prefs.saveOffset(MainActivity.this, offset);
-            final long fOffset = offset;
+            NtpClient.Result res = NtpClient.sync();
+            if (res == null) {
+                runOnUiThread(() -> {
+                    updateStatus(Prefs.getOffset(MainActivity.this));
+                    Toast.makeText(MainActivity.this,
+                            "网络校时失败，沿用上次偏差；建议换网络后点「重新校时」",
+                            Toast.LENGTH_LONG).show();
+                });
+                return;
+            }
+            Prefs.saveOffset(MainActivity.this, res.offsetMs);
+            Prefs.saveSyncInfo(MainActivity.this, res.source, res.rttMs, res.reliable);
+            final long fOffset = res.offsetMs;
             runOnUiThread(() -> updateStatus(fOffset));
         }).start();
     }
@@ -191,7 +204,20 @@ public class MainActivity extends AppCompatActivity {
         String bj = sdf.format(new Date(realNow));
         String diff = (offset > 0 ? "+" : "") + offset + " ms";
         if (offset == 0) diff = "（未校时，暂用系统时间）";
-        tvStatus.setText("网络北京时间：" + bj + "\n与手机时钟偏差：" + diff);
+
+        long rtt = Prefs.getSyncRtt(this);
+        String sync;
+        if (rtt < 0) {
+            sync = "尚未成功校时";
+        } else if (Prefs.isSyncReliable(this)) {
+            sync = Prefs.getSyncSource(this) + " · 往返 " + rtt + "ms · 可信";
+        } else {
+            sync = Prefs.getSyncSource(this) + " · 往返 " + rtt + "ms\n"
+                    + "注意：链路延迟过大，偏差可能不准，建议换网络重新校时";
+        }
+        tvStatus.setText("网络北京时间：" + bj
+                + "\n与手机时钟偏差：" + diff
+                + "\n校时来源：" + sync);
     }
 
     /**
@@ -250,6 +276,10 @@ public class MainActivity extends AppCompatActivity {
                 }
                 String offsetTxt = (offset == 0) ? "校时偏差 未校准" :
                         String.format(Locale.CHINA, "校时偏差 %+dms", offset);
+                long rtt = Prefs.getSyncRtt(this);
+                if (rtt >= 0 && !Prefs.isSyncReliable(this)) {
+                    offsetTxt += "（校时不准，往返 " + rtt + "ms）";
+                }
                 sb.append("\n下次点击 ").append(next).append("（").append(rel).append("）· ").append(offsetTxt);
             }
         }
@@ -351,12 +381,20 @@ public class MainActivity extends AppCompatActivity {
         e.apply();
 
         Toast.makeText(this, "正在网络校时并启用 " + times.size() + " 个定时点击...", Toast.LENGTH_SHORT).show();
-        // 重新校时后按最新偏差排程
+        // 重新校时后按最新偏差排程；校时失败时沿用旧偏差，不拿不可信的值去排闹钟
         new Thread(() -> {
-            Long off = NtpClient.getOffsetMs();
-            long offset = (off == null) ? Prefs.getOffset(MainActivity.this) : off;
-            Prefs.saveOffset(MainActivity.this, offset);
-            final long fOffset = offset;
+            NtpClient.Result res = NtpClient.sync();
+            final long fOffset;
+            final boolean synced;
+            if (res == null) {
+                fOffset = Prefs.getOffset(MainActivity.this);
+                synced = false;
+            } else {
+                fOffset = res.offsetMs;
+                synced = true;
+                Prefs.saveOffset(MainActivity.this, res.offsetMs);
+                Prefs.saveSyncInfo(MainActivity.this, res.source, res.rttMs, res.reliable);
+            }
             runOnUiThread(() -> {
                 // scheduleAll 内部会先清空所有历史闹钟再重新注册
                 AlarmScheduler.scheduleAll(MainActivity.this, fOffset);
@@ -364,7 +402,7 @@ public class MainActivity extends AppCompatActivity {
                 Toast.makeText(MainActivity.this,
                         "已启用 " + times.size() + " 个定时点击（校时偏差 " + fOffset
                                 + "ms，" + (bufferMs < 0 ? "提前 " + Math.abs(bufferMs) + "ms 点击" : "到点后延迟 " + bufferMs + "ms 再点")
-                                + "）",
+                                + "）" + (synced ? "" : "\n校时失败，沿用上次偏差"),
                         Toast.LENGTH_LONG).show();
             });
         }).start();
