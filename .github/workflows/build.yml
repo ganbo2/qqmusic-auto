@@ -58,7 +58,21 @@ jobs:
           echo "$HOME/gradle-8.2/bin" >> $GITHUB_PATH
 
       - name: Build Debug APK
-        run: gradle assembleDebug
+        run: |
+          gradle assembleDebug > /tmp/gradle-build.log 2>&1 || RC=$?
+          cat /tmp/gradle-build.log
+          if [ "${RC:-0}" -ne 0 ]; then
+            grep -nE "error:|FAILURE:|What went wrong|Execution failed|Could not|Caused by:|symbol:|location:" /tmp/gradle-build.log \
+              | head -25 | while IFS= read -r line; do echo "::error::$line"; done
+            exit $RC
+          fi
+
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gradle-build-log
+          path: /tmp/gradle-build.log
 
       - name: Verify APK signing identity
         run: |
