@@ -149,6 +149,10 @@ public class MainActivity extends AppCompatActivity {
             Toast.makeText(this, "正在多源校时...", Toast.LENGTH_SHORT).show();
             refreshNetworkTime();
         });
+        findViewById(R.id.btnScrollTop).setOnClickListener(v -> {
+            android.widget.ScrollView mainScroll = findViewById(R.id.mainScroll);
+            if (mainScroll != null) mainScroll.smoothScrollTo(0, 0);
+        });
         findViewById(R.id.btnAccessibility).setOnClickListener(v ->
                 startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));
         findViewById(R.id.btnAddTime).setOnClickListener(v -> showTimePicker());
@@ -417,16 +421,26 @@ public class MainActivity extends AppCompatActivity {
         Toast.makeText(this, "已立即触发一次点击（测试，不记录日志；请确保「立即提现」页面已打开）", Toast.LENGTH_SHORT).show();
     }
 
-    /** 渲染点击日志列表：每条可点标记成功/失败，长按删除。 */
+    /** 渲染点击日志：最新在最上、全部展开；每条可点标记成功/失败，长按删除。 */
     private void renderLog() {
         containerLog.removeAllViews();
         List<LogStore.Entry> list = LogStore.list(this);
         if (list.isEmpty()) {
             TextView empty = new TextView(this);
-            empty.setText("（暂无日志。到点自动点击后会自动记录一条，可在通知栏点「✓成功 / ✗失败」标记）");
+            empty.setText("（暂无日志。到点自动点击后会自动记录一条，点击该条可标记成功/失败）");
             containerLog.addView(empty);
             return;
         }
+        // 按真实触发时间倒序：最近一次点击排最上面。
+        // 用时间而非 id，是因为恢复日志时导入的旧记录会被重新分配更大的 id。
+        list.sort((a, b) -> Long.compare(b.realTimeMs, a.realTimeMs));
+
+        TextView header = new TextView(this);
+        header.setText("共 " + list.size() + " 条（最新在上，向下滑动查看全部）");
+        header.setTextSize(12);
+        header.setPadding(12, 4, 12, 10);
+        containerLog.addView(header);
+
         java.text.SimpleDateFormat sdf =
                 new java.text.SimpleDateFormat("MM-dd HH:mm:ss.SSS", java.util.Locale.CHINA);
         sdf.setTimeZone(java.util.TimeZone.getTimeZone("Asia/Shanghai"));
@@ -435,15 +449,25 @@ public class MainActivity extends AppCompatActivity {
             final int cur = e.result;
             TextView row = new TextView(this);
             String res;
-            if (cur == LogStore.RESULT_SUCCESS) res = "✅ 成功";
-            else if (cur == LogStore.RESULT_FAILURE) res = "❌ 失败";
-            else res = "❓ 未标记";
+            int bg;
+            if (cur == LogStore.RESULT_SUCCESS) {
+                res = "成功"; bg = 0xFFE8F5E9;
+            } else if (cur == LogStore.RESULT_FAILURE) {
+                res = "失败"; bg = 0xFFFFEBEE;
+            } else {
+                res = "未标记"; bg = 0xFFE8E8E8;
+            }
             row.setText("#" + id + "  " + sdf.format(new java.util.Date(e.realTimeMs))
                     + "  偏差 " + (e.offsetMs > 0 ? "+" : "") + e.offsetMs
                     + "ms  裕度 " + e.bufferMs + "ms\n"
-                    + "    " + e.detail + "  → " + res + "（点击切换：成功→失败→成功）");
+                    + "    " + e.detail + "  → [" + res + "]（点击切换：成功→失败→成功）");
             row.setPadding(12, 8, 12, 8);
-            row.setBackground(new android.graphics.drawable.ColorDrawable(0xFFE8E8E8));
+            row.setBackground(new android.graphics.drawable.ColorDrawable(bg));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT);
+            lp.bottomMargin = 5;
+            row.setLayoutParams(lp);
             row.setOnClickListener(v -> {
                 int next;
                 if (cur == LogStore.RESULT_UNKNOWN || cur == LogStore.RESULT_FAILURE) {
