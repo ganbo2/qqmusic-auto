@@ -98,7 +98,7 @@ public class NotificationHelper {
 
     /** 异常告警：无障碍服务未开启、点击链路失败等，走 HIGH 渠道确保能看见。 */
     public static void notifyWarn(Context c, String body) {
-        createChannel();
+        createChannel(c);
         NotificationManager nm = (NotificationManager) c.getSystemService(Context.NOTIFICATION_SERVICE);
         if (nm == null) return;
         Notification n = new NotificationCompat.Builder(c, CHANNEL_ALERT)
