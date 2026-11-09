@@ -202,6 +202,7 @@ public class MainActivity extends AppCompatActivity {
         findViewById(R.id.btnAddTime).setOnClickListener(v -> showTimePicker());
         findViewById(R.id.btnSave).setOnClickListener(v -> saveAndSchedule());
         findViewById(R.id.btnTest).setOnClickListener(v -> testNow());
+        findViewById(R.id.btnSimulate).setOnClickListener(v -> simulateScheduledTrigger());
         findViewById(R.id.btnRefreshLog).setOnClickListener(v -> {
             logShown = LOG_PAGE_SIZE;
             renderLog();
@@ -221,6 +222,14 @@ public class MainActivity extends AppCompatActivity {
                 notifPermLauncher.launch(Manifest.permission.POST_NOTIFICATIONS);
             }
         }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // 从后台切回来时刷新触发诊断与日志，刚到点没反应时能立刻看到断在哪一环
+        updateStatus(Prefs.getOffset(this));
+        renderLog();
     }
 
     @Override
@@ -284,7 +293,8 @@ public class MainActivity extends AppCompatActivity {
                     + "\n本次实测：未进行（系统时间模式不校时）"
                     + "\n排程采用：0 ms"
                     + "\n" + Prefs.getOffsetReason(this)
-                    + "\n说明：点击时刻完全跟随系统时钟，依赖系统「自动设置时间」保持准确");
+                    + "\n说明：点击时刻完全跟随系统时钟，依赖系统「自动设置时间」保持准确"
+                    + Diag.summary(this));
             return;
         }
 
@@ -326,7 +336,7 @@ public class MainActivity extends AppCompatActivity {
             sb.append("\n提示：多源一致测出手机时钟偏了 ").append(offset)
                     .append("ms，APP 已自动补偿；也可在系统设置里关开一次「自动设置时间」让系统时钟归位");
         }
-        tvStatus.setText(sb.toString());
+        tvStatus.setText(sb.append(Diag.summary(this)).toString());
     }
 
     /**
@@ -528,12 +538,22 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void testNow() {
-        saveAndSchedule();
+        // 不再顺带 saveAndSchedule()：测试只是点一下，不应取消并重排所有已注册闹钟
         Intent trigger = new Intent(AutoClickService.ACTION_TRIGGER);
         trigger.setPackage(getPackageName());
         trigger.putExtra(AutoClickService.EXTRA_IS_TEST, true);
         sendBroadcast(trigger);
         Toast.makeText(this, "已立即触发一次点击（测试，不记录日志；请确保「立即提现」页面已打开）", Toast.LENGTH_SHORT).show();
+    }
+
+    /** 完整走一遍定时触发路径（不带测试标记），验证日志写入与「请标记结果」通知是否正常。 */
+    private void simulateScheduledTrigger() {
+        Intent trigger = new Intent(AutoClickService.ACTION_TRIGGER);
+        trigger.setPackage(getPackageName());
+        sendBroadcast(trigger);
+        Toast.makeText(this,
+                "已模拟一次定时触发：正常应新增 1 条日志并弹出「请标记结果」通知（5 秒内重复触发会被去重）",
+                Toast.LENGTH_LONG).show();
     }
 
     /**

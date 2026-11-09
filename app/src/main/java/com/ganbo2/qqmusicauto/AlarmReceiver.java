@@ -33,21 +33,38 @@ public class AlarmReceiver extends BroadcastReceiver {
         }
         int index = intent.getIntExtra(AlarmScheduler.EXTRA_INDEX, -1);
         long firedRealMs = intent.getLongExtra(AlarmScheduler.EXTRA_FIRE_REAL_MS, 0L);
+        boolean a11y = Diag.isAccessibilityEnabled(context);
 
-        if (index >= 0) {
-            List<String> times = AlarmScheduler.parseTimes(Prefs.getTimes(context));
-            if (index < times.size()) {
-                AlarmManager am = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
-                if (am != null) {
-                    long offset = Prefs.getOffset(context);
-                    if (firedRealMs > 0L) {
-                        // 精确 +24h 重排，避免负裕度时排出「过去时间」导致闹钟立即二次触发
-                        AlarmScheduler.scheduleNextDay(context, am, index, firedRealMs, offset);
-                    } else {
-                        AlarmScheduler.scheduleOne(context, am, index, times.get(index), offset);
+        // ① 先落盘「闹钟确实响了」，无论后面成功与否，界面都能定位断点
+        Diag.alarmFired(context, index, a11y, Prefs.getOffset(context));
+
+        // ② 次日重排：任何异常都不能阻断后面的点击广播。
+        //    国产 ROM 上 setAlarmClock 偶发异常，旧版会让 onReceive 直接崩掉，
+        //    表现为「到点没点击、没日志、没通知」——这是最隐蔽的静默失败点。
+        try {
+            if (index >= 0) {
+                List<String> times = AlarmScheduler.parseTimes(Prefs.getTimes(context));
+                if (index < times.size()) {
+                    AlarmManager am = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
+                    if (am != null) {
+                        long offset = Prefs.getOffset(context);
+                        if (firedRealMs > 0L) {
+                            // 精确 +24h 重排，避免负裕度时排出「过去时间」导致闹钟立即二次触发
+                            AlarmScheduler.scheduleNextDay(context, am, index, firedRealMs, offset);
+                        } else {
+                            AlarmScheduler.scheduleOne(context, am, index, times.get(index), offset);
+                        }
                     }
                 }
             }
+        } catch (Exception e) {
+            Log.e(TAG, "reschedule failed, still trigger click", e);
+        }
+
+        // ③ 无障碍服务没开就明确告警，不再静默失败
+        if (!a11y) {
+            NotificationHelper.notifyWarn(context,
+                    "定时点击可能未执行：无障碍服务未开启，请打开 APP 点「1. 开启无障碍服务」重新授权");
         }
 
         if (Prefs.getLaunch(context)) {

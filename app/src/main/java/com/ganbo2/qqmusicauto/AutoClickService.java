@@ -61,7 +61,10 @@ public class AutoClickService extends AccessibilityService {
             @Override
             public void onReceive(Context context, Intent intent) {
                 if (ACTION_TRIGGER.equals(intent.getAction())) {
-                    startAutoClick(intent.getBooleanExtra(EXTRA_IS_TEST, false));
+                    boolean test = intent.getBooleanExtra(EXTRA_IS_TEST, false);
+                    // 记录「广播已送达」，与闹钟触发记录配合即可定位链路断点
+                    Diag.broadcastReceived(context, test);
+                    startAutoClick(test);
                 }
             }
         };
@@ -239,6 +242,8 @@ public class AutoClickService extends AccessibilityService {
                     AutoClickService.this, NotificationHelper.NOTIF_ID_MARK, logId, body), 800);
         } catch (Exception e) {
             Log.e(TAG, "recordLog failed", e);
+            // 旧版在这里静默失败：用户只看到「没日志没通知」，完全不知道原因
+            NotificationHelper.notifyWarn(this, "点击日志写入失败：" + e.getMessage());
         }
     }
 

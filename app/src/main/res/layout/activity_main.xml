@@ -180,11 +180,28 @@
             android:background="#FFF8E1"
             android:text="北京时间 校时中..." />
 
-        <Button
-            android:id="@+id/btnTest"
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="立即测试一次（现在就点）" />
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/btnTest"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:textSize="12sp"
+                android:text="立即测试（不记日志）" />
+
+            <Button
+                android:id="@+id/btnSimulate"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="8dp"
+                android:textSize="12sp"
+                android:text="模拟定时触发（写日志）" />
+        </LinearLayout>
 
         <TextView
             android:layout_width="match_parent"

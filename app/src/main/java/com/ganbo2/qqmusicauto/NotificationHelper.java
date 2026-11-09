@@ -19,6 +19,13 @@ public class NotificationHelper {
     public static final String CHANNEL_ID = "countdown_status";
     /** 常驻倒计时通知的固定 id（与 TriggerService 的 1001 区分，避免相互覆盖）。 */
     public static final int NOTIF_ID_STATUS = 1002;
+    /**
+     * 点击结果 / 告警专用渠道：IMPORTANCE_HIGH。
+     * 旧的「状态栏倒计时」LOW 渠道常被用户手动关闭，会把「请标记结果」通知一起吞掉；
+     * 通知渠道一旦创建就无法用代码提升重要性，所以结果通知一律改用这个新渠道。
+     */
+    public static final String CHANNEL_ALERT = "click_alert";
+    public static final int NOTIF_ID_WARN = 1004;
 
     /** 标记结果的广播 Action。 */
     public static final String ACTION_MARK_SUCCESS = "com.ganbo2.qqmusicauto.MARK_SUCCESS";
@@ -31,11 +38,11 @@ public class NotificationHelper {
         NotificationManager nm = (NotificationManager) c.getSystemService(Context.NOTIFICATION_SERVICE);
         if (nm == null) return;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            if (nm.getNotificationChannel(CHANNEL_ID) != null) return;
+            if (nm.getNotificationChannel(CHANNEL_ALERT) != null) return;
             NotificationChannel ch = new NotificationChannel(
-                    CHANNEL_ID, "状态栏倒计时", NotificationManager.IMPORTANCE_LOW);
-            ch.setDescription("显示下一次自动点击的北京时间与倒计时");
-            ch.setShowBadge(false);
+                    CHANNEL_ALERT, "点击结果与告警", NotificationManager.IMPORTANCE_HIGH);
+            ch.setDescription("定时点击结果、请标记结果与异常告警");
+            ch.setShowBadge(true);
             nm.createNotificationChannel(ch);
         }
     }
@@ -45,7 +52,7 @@ public class NotificationHelper {
         createChannel(c);
         NotificationManager nm = (NotificationManager) c.getSystemService(Context.NOTIFICATION_SERVICE);
         if (nm == null) return;
-        Notification n = new NotificationCompat.Builder(c, CHANNEL_ID)
+        Notification n = new NotificationCompat.Builder(c, CHANNEL_ALERT)
                 .setSmallIcon(android.R.drawable.ic_dialog_info)
                 .setContentTitle("QQ音乐自动点击")
                 .setContentText(body)
@@ -76,7 +83,7 @@ public class NotificationHelper {
         PendingIntent piNo = PendingIntent.getBroadcast(c, 1, markNo,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
 
-        Notification n = new NotificationCompat.Builder(c, CHANNEL_ID)
+        Notification n = new NotificationCompat.Builder(c, CHANNEL_ALERT)
                 .setSmallIcon(android.R.drawable.ic_dialog_info)
                 .setContentTitle("QQ音乐自动点击 · 请标记结果")
                 .setContentText(body)
@@ -87,6 +94,22 @@ public class NotificationHelper {
                 .setAutoCancel(true)
                 .build();
         nm.notify(id, n);
+    }
+
+    /** 异常告警：无障碍服务未开启、点击链路失败等，走 HIGH 渠道确保能看见。 */
+    public static void notifyWarn(Context c, String body) {
+        createChannel();
+        NotificationManager nm = (NotificationManager) c.getSystemService(Context.NOTIFICATION_SERVICE);
+        if (nm == null) return;
+        Notification n = new NotificationCompat.Builder(c, CHANNEL_ALERT)
+                .setSmallIcon(android.R.drawable.ic_dialog_alert)
+                .setContentTitle("QQ音乐自动点击 · 未执行")
+                .setContentText(body)
+                .setStyle(new NotificationCompat.BigTextStyle().bigText(body))
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setAutoCancel(true)
+                .build();
+        nm.notify(NOTIF_ID_WARN, n);
     }
 }
 
