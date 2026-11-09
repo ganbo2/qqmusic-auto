@@ -14,6 +14,11 @@ public class BootReceiver extends BroadcastReceiver {
     public void onReceive(Context context, Intent intent) {
         if (Intent.ACTION_BOOT_COMPLETED.equals(intent.getAction())) {
             Log.d("BootReceiver", "boot completed, rescheduling");
+            if (Prefs.getUseSystemTime(context)) {
+                Prefs.saveOffset(context, 0);
+                AlarmScheduler.scheduleAll(context, 0);
+                return;
+            }
             AlarmScheduler.scheduleAll(context); // 用已存储偏差
             // 网络就绪后刷新 NTP 偏差并重排；若本次校时不可信，保留开机时用的旧偏差
             new Thread(() -> {

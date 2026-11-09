@@ -30,8 +30,16 @@
             android:id="@+id/btnResync"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="12dp"
+            android:layout_marginBottom="4dp"
             android:text="重新校时（可多次点，对比偏差是否稳定）" />
+
+        <CheckBox
+            android:id="@+id/cbUseSystemTime"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp"
+            android:textSize="13sp"
+            android:text="只用手机系统时间（已开启「自动设置时间」时推荐：偏差恒为 0，不做网络校时）" />
 
         <Button
             android:id="@+id/btnAccessibility"

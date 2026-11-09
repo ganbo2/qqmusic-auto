@@ -20,6 +20,8 @@ public class Prefs {
     public static final String KEY_SYNC_DETAIL = "ntp_sync_detail";
     public static final String KEY_SYNC_SPREAD = "ntp_sync_spread";
     public static final String KEY_SYNC_SAMPLES = "ntp_sync_samples";
+    /** true = 不做网络校时，直接用手机系统时钟（偏差恒为 0）。 */
+    public static final String KEY_USE_SYSTEM_TIME = "use_system_time";
     public static final String KEY_USE_COORD = "use_coord";
     public static final String KEY_COORD_X = "coord_x";
     public static final String KEY_COORD_Y = "coord_y";
@@ -91,6 +93,14 @@ public class Prefs {
 
     public static int getSyncSampleCount(Context c) {
         return get(c).getInt(KEY_SYNC_SAMPLES, 0);
+    }
+
+    public static boolean getUseSystemTime(Context c) {
+        return get(c).getBoolean(KEY_USE_SYSTEM_TIME, false);
+    }
+
+    public static void saveUseSystemTime(Context c, boolean v) {
+        get(c).edit().putBoolean(KEY_USE_SYSTEM_TIME, v).apply();
     }
 
     /** -1 表示从未成功校时。 */

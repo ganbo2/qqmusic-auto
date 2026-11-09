@@ -42,6 +42,9 @@ public class NtpClient {
     };
     private static final int NTP_PORT = 123;
     private static final int TIMEOUT = 2000;
+    /** HTTP 兜底采样次数：首次含 DNS/TLS 握手，后续可复用连接，取最优样本。 */
+    private static final int HTTP_SAMPLES = 3;
+    private static final int HTTP_TIMEOUT = 1500;
     private static final long OFFSET_1900_TO_1970 = 2208988800L;
     /** RTT 低于此值算低延迟样本；凑够 3 个即可停止，避免无谓等待。 */
     private static final long GOOD_RTT_MS = 120;
@@ -96,13 +99,13 @@ public class NtpClient {
             // 国内前两台都连不上，多半是 UDP 123 被运营商封了，不必再等跨境节点各 2 秒
             if (ntpFailures >= 2 && samples.isEmpty()) break;
         }
-        // NTP 样本不足两个时，用 HTTP 补齐以便做交叉验证
+        // NTP 样本不足两个时用 HTTP 兜底；毫秒级接口内部已多次采样，成功即可停止
         if (samples.size() < 2) {
             for (String url : HTTP_FALLBACKS) {
                 try {
                     Result r = queryHttp(url);
                     samples.add(r);
-                    if (samples.size() >= 2) break;
+                    if (!r.secondPrecision) break;
                 } catch (Exception e) {
                     Log.w(TAG, "http time failed: " + url + " -> " + e.getMessage());
                 }
@@ -204,47 +207,74 @@ public class NtpClient {
         }
     }
 
-    /** HTTPS 兜底：优先用返回 13 位毫秒时间戳的接口，并做往返中点补偿。 */
+    /**
+     * HTTPS 兜底。注意：服务器时间戳是「收到请求后生成响应时」给出的，靠近往返末尾；
+     * 而 rtt 里还包含 DNS/TCP/TLS 握手。若按往返中点补偿，会把约 rtt/2 的握手时间
+     * 错算成时钟偏差（实测 rtt=2050ms 时虚高 +1023ms，移动网络下可达 +1800ms）。
+     *
+     * <p>改用区间下界：时间戳必然早于客户端收到响应，因此
+     * {@code trueOffset >= serverMs - (t0 + rtt)}。多次采样取最紧的下界，
+     * 得到不会虚高的估计（残余误差仅为下行传输时间，几十~几百毫秒）。</p>
+     */
     private static Result queryHttp(String urlStr) throws Exception {
-        long t0 = System.currentTimeMillis();
-        long ticks0 = System.nanoTime();
-        HttpURLConnection conn = (HttpURLConnection) new URL(urlStr).openConnection();
-        conn.setConnectTimeout(TIMEOUT);
-        conn.setReadTimeout(TIMEOUT);
-        conn.setRequestProperty("User-Agent", "qqmusic-auto");
-        BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream()));
-        StringBuilder sb = new StringBuilder();
-        String line;
-        while ((line = reader.readLine()) != null) sb.append(line);
-        reader.close();
-        conn.disconnect();
-        long ticks1 = System.nanoTime();
-        long rttMs = TimeUnit.NANOSECONDS.toMillis(ticks1 - ticks0);
-
-        String s = sb.toString();
-        long serverMs = -1;
+        String host = new URL(urlStr).getHost();
+        long bestLower = Long.MIN_VALUE;
+        long minRtt = Long.MAX_VALUE;
         boolean secondPrecision = false;
-        java.util.regex.Matcher m = java.util.regex.Pattern
-                .compile("\"t\"\\s*:\\s*\"?(\\d{13})").matcher(s);
-        if (m.find()) {
-            serverMs = Long.parseLong(m.group(1));
-        } else {
-            int i = s.indexOf("\"unixtime\"");
-            if (i >= 0) {
-                int c = s.indexOf(':', i) + 1;
-                int end = s.indexOf(',', c);
-                if (end < 0) end = s.indexOf('}', c);
-                serverMs = Long.parseLong(s.substring(c, end).trim()) * 1000L;
-                secondPrecision = true; // 秒级时间戳，自带最多 999ms 截断误差
+        int ok = 0;
+        for (int i = 0; i < HTTP_SAMPLES; i++) {
+            long t0 = System.currentTimeMillis();
+            long ticks0 = System.nanoTime();
+            HttpURLConnection conn = null;
+            try {
+                conn = (HttpURLConnection) new URL(urlStr).openConnection();
+                conn.setConnectTimeout(HTTP_TIMEOUT);
+                conn.setReadTimeout(HTTP_TIMEOUT);
+                conn.setRequestProperty("User-Agent", "qqmusic-auto");
+                BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+                StringBuilder sb = new StringBuilder();
+                String line;
+                while ((line = reader.readLine()) != null) sb.append(line);
+                reader.close();
+                long ticks1 = System.nanoTime();
+                long rttMs = TimeUnit.NANOSECONDS.toMillis(ticks1 - ticks0);
+
+                String s = sb.toString();
+                long serverMs = -1;
+                boolean sec = false;
+                java.util.regex.Matcher m = java.util.regex.Pattern
+                        .compile("\"t\"\\s*:\\s*\"?(\\d{13})").matcher(s);
+                if (m.find()) {
+                    serverMs = Long.parseLong(m.group(1));
+                } else {
+                    int p = s.indexOf("\"unixtime\"");
+                    if (p >= 0) {
+                        int c = s.indexOf(':', p) + 1;
+                        int end = s.indexOf(',', c);
+                        if (end < 0) end = s.indexOf('}', c);
+                        serverMs = Long.parseLong(s.substring(c, end).trim()) * 1000L;
+                        sec = true; // 秒级时间戳，自带最多 999ms 截断误差
+                    }
+                }
+                if (serverMs < 0) throw new Exception("no timestamp in response");
+                secondPrecision |= sec;
+
+                long lower = serverMs - (t0 + rttMs);
+                if (lower > bestLower) bestLower = lower;
+                if (rttMs < minRtt) minRtt = rttMs;
+                ok++;
+            } catch (Exception e) {
+                Log.w(TAG, "http sample failed: " + host + " -> " + e.getMessage());
+            } finally {
+                if (conn != null) conn.disconnect();
             }
         }
-        if (serverMs < 0) throw new Exception("no timestamp in response");
+        if (ok == 0) throw new Exception("all http samples failed");
 
-        long localMid = t0 + rttMs / 2;
         Result res = new Result();
-        res.offsetMs = serverMs - localMid;
-        res.rttMs = rttMs;
-        res.source = (secondPrecision ? "HTTP秒级 " : "HTTP ") + new URL(urlStr).getHost();
+        res.offsetMs = bestLower;
+        res.rttMs = minRtt;
+        res.source = (secondPrecision ? "HTTP秒级 " : "HTTP ") + host + "（" + ok + "次采样）";
         res.secondPrecision = secondPrecision;
         return res;
     }
