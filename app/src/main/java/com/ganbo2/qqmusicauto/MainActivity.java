@@ -50,6 +50,10 @@ public class MainActivity extends AppCompatActivity {
     private LinearLayout containerLog;
     private TextView tvCountdown;
     private TextView tvVersion;
+    /** 日志列表分页：一次最多渲染 50 条，避免 500 条全展开导致打开界面卡顿。 */
+    private static final int LOG_PAGE_SIZE = 50;
+    private int logShown = LOG_PAGE_SIZE;
+    private TextView tvLogCount;
     private final List<String> times = new ArrayList<>();
     private final Handler countdownHandler = new Handler(Looper.getMainLooper());
     private final Runnable countdownTick = new Runnable() {
@@ -78,6 +82,7 @@ public class MainActivity extends AppCompatActivity {
                     while ((line = reader.readLine()) != null) sb.append(line);
                     reader.close();
                     int n = LogStore.importJson(this, sb.toString());
+                    logShown = LOG_PAGE_SIZE;
                     renderLog();
                     Toast.makeText(this, "成功恢复 " + n + " 条日志", Toast.LENGTH_SHORT).show();
                 } catch (Exception e) {
@@ -158,9 +163,13 @@ public class MainActivity extends AppCompatActivity {
         findViewById(R.id.btnAddTime).setOnClickListener(v -> showTimePicker());
         findViewById(R.id.btnSave).setOnClickListener(v -> saveAndSchedule());
         findViewById(R.id.btnTest).setOnClickListener(v -> testNow());
-        findViewById(R.id.btnRefreshLog).setOnClickListener(v -> renderLog());
+        findViewById(R.id.btnRefreshLog).setOnClickListener(v -> {
+            logShown = LOG_PAGE_SIZE;
+            renderLog();
+        });
         findViewById(R.id.btnClearLog).setOnClickListener(v -> {
             LogStore.clear(this);
+            logShown = LOG_PAGE_SIZE;
             renderLog();
             Toast.makeText(this, "日志已清空", Toast.LENGTH_SHORT).show();
         });
@@ -421,9 +430,14 @@ public class MainActivity extends AppCompatActivity {
         Toast.makeText(this, "已立即触发一次点击（测试，不记录日志；请确保「立即提现」页面已打开）", Toast.LENGTH_SHORT).show();
     }
 
-    /** 渲染点击日志：最新在最上、全部展开；每条可点标记成功/失败，长按删除。 */
+    /**
+     * 渲染点击日志：按真实触发时间倒序（最新在上），分页展开。
+     * 上限放宽到 500 条后，若一次性把全部条目生成成 TextView，打开界面和点击标记都会明显卡顿，
+     * 因此默认只渲染最近 50 条，底部提供「加载更多 / 显示全部」。
+     */
     private void renderLog() {
         containerLog.removeAllViews();
+        tvLogCount = null;
         List<LogStore.Entry> list = LogStore.list(this);
         if (list.isEmpty()) {
             TextView empty = new TextView(this);
@@ -435,60 +449,121 @@ public class MainActivity extends AppCompatActivity {
         // 用时间而非 id，是因为恢复日志时导入的旧记录会被重新分配更大的 id。
         list.sort((a, b) -> Long.compare(b.realTimeMs, a.realTimeMs));
 
-        TextView header = new TextView(this);
-        header.setText("共 " + list.size() + " 条（最新在上，向下滑动查看全部）");
-        header.setTextSize(12);
-        header.setPadding(12, 4, 12, 10);
-        containerLog.addView(header);
+        final int total = list.size();
+        final int shown = Math.min(logShown, total);
+
+        tvLogCount = new TextView(this);
+        tvLogCount.setTextSize(12);
+        tvLogCount.setPadding(12, 4, 12, 10);
+        containerLog.addView(tvLogCount);
+        updateLogCountText(total, shown);
 
         java.text.SimpleDateFormat sdf =
                 new java.text.SimpleDateFormat("MM-dd HH:mm:ss.SSS", java.util.Locale.CHINA);
         sdf.setTimeZone(java.util.TimeZone.getTimeZone("Asia/Shanghai"));
-        for (final LogStore.Entry e : list) {
-            final long id = e.id;
-            final int cur = e.result;
-            TextView row = new TextView(this);
-            String res;
-            int bg;
-            if (cur == LogStore.RESULT_SUCCESS) {
-                res = "成功"; bg = 0xFFE8F5E9;
-            } else if (cur == LogStore.RESULT_FAILURE) {
-                res = "失败"; bg = 0xFFFFEBEE;
-            } else {
-                res = "未标记"; bg = 0xFFE8E8E8;
-            }
-            row.setText("#" + id + "  " + sdf.format(new java.util.Date(e.realTimeMs))
-                    + "  偏差 " + (e.offsetMs > 0 ? "+" : "") + e.offsetMs
-                    + "ms  裕度 " + e.bufferMs + "ms\n"
-                    + "    " + e.detail + "  → [" + res + "]（点击切换：成功→失败→成功）");
-            row.setPadding(12, 8, 12, 8);
-            row.setBackground(new android.graphics.drawable.ColorDrawable(bg));
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT);
-            lp.bottomMargin = 5;
-            row.setLayoutParams(lp);
-            row.setOnClickListener(v -> {
-                int next;
-                if (cur == LogStore.RESULT_UNKNOWN || cur == LogStore.RESULT_FAILURE) {
-                    next = LogStore.RESULT_SUCCESS;
-                } else {
-                    next = LogStore.RESULT_FAILURE;
-                }
-                LogStore.mark(this, id, next);
-                renderLog();
-                String msg = next == LogStore.RESULT_SUCCESS ? "已标记日志#" + id + " 为「成功」"
-                        : "已标记日志#" + id + " 为「失败」";
-                Toast.makeText(this, msg, Toast.LENGTH_SHORT).show();
-            });
-            row.setOnLongClickListener(v -> {
-                LogStore.remove(this, id);
-                renderLog();
-                Toast.makeText(this, "已删除日志#" + id, Toast.LENGTH_SHORT).show();
-                return true;
-            });
-            containerLog.addView(row);
+        for (int i = 0; i < shown; i++) {
+            addLogRow(list.get(i), sdf);
         }
+
+        if (shown < total) {
+            LinearLayout bar = new LinearLayout(this);
+            bar.setOrientation(LinearLayout.HORIZONTAL);
+            Button more = new Button(this);
+            more.setText("加载更多（还有 " + (total - shown) + " 条）");
+            more.setTextSize(12);
+            more.setMinWidth(0);
+            more.setMinimumWidth(0);
+            more.setLayoutParams(new LinearLayout.LayoutParams(
+                    0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+            more.setOnClickListener(v -> {
+                logShown += LOG_PAGE_SIZE;
+                renderLog();
+            });
+            bar.addView(more);
+            Button all = new Button(this);
+            all.setText("显示全部 " + total + " 条");
+            all.setTextSize(12);
+            all.setMinWidth(0);
+            all.setMinimumWidth(0);
+            all.setLayoutParams(new LinearLayout.LayoutParams(
+                    0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+            all.setOnClickListener(v -> {
+                logShown = LogStore.MAX;
+                renderLog();
+                Toast.makeText(this, "已展开全部 " + total + " 条（条数多时可能略卡）",
+                        Toast.LENGTH_SHORT).show();
+            });
+            bar.addView(all);
+            containerLog.addView(bar);
+        } else if (total > LOG_PAGE_SIZE) {
+            TextView end = new TextView(this);
+            end.setText("— 已显示全部 " + total + " 条 —");
+            end.setTextSize(12);
+            end.setPadding(12, 6, 12, 12);
+            containerLog.addView(end);
+        }
+    }
+
+    private void updateLogCountText(int total, int shown) {
+        if (tvLogCount == null) return;
+        tvLogCount.setText("共 " + total + " 条 · 当前显示 " + shown + " 条 · 最多保留 "
+                + LogStore.MAX + " 条（最新在上）");
+    }
+
+    private String buildRowText(LogStore.Entry e, int result,
+                                java.text.SimpleDateFormat sdf) {
+        String res = result == LogStore.RESULT_SUCCESS ? "成功"
+                : result == LogStore.RESULT_FAILURE ? "失败" : "未标记";
+        return "#" + e.id + "  " + sdf.format(new java.util.Date(e.realTimeMs))
+                + "  偏差 " + (e.offsetMs > 0 ? "+" : "") + e.offsetMs
+                + "ms  裕度 " + e.bufferMs + "ms\n"
+                + "    " + e.detail + "  → [" + res + "]（点击切换：成功→失败→成功）";
+    }
+
+    private int rowBg(int result) {
+        if (result == LogStore.RESULT_SUCCESS) return 0xFFE8F5E9;
+        if (result == LogStore.RESULT_FAILURE) return 0xFFFFEBEE;
+        return 0xFFE8E8E8;
+    }
+
+    private void addLogRow(final LogStore.Entry e, final java.text.SimpleDateFormat sdf) {
+        final long id = e.id;
+        final int[] cur = { e.result };
+        final TextView row = new TextView(this);
+        row.setText(buildRowText(e, cur[0], sdf));
+        row.setPadding(12, 8, 12, 8);
+        row.setBackground(new android.graphics.drawable.ColorDrawable(rowBg(cur[0])));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        lp.bottomMargin = 5;
+        row.setLayoutParams(lp);
+        // 标记成功/失败：只更新这一行，不重建整个列表（500 条时全表重建会明显卡顿）
+        row.setOnClickListener(v -> {
+            int next = (cur[0] == LogStore.RESULT_SUCCESS)
+                    ? LogStore.RESULT_FAILURE : LogStore.RESULT_SUCCESS;
+            LogStore.mark(this, id, next);
+            cur[0] = next;
+            row.setText(buildRowText(e, next, sdf));
+            row.setBackground(new android.graphics.drawable.ColorDrawable(rowBg(next)));
+            Toast.makeText(this, "已标记日志#" + id + " 为「"
+                    + (next == LogStore.RESULT_SUCCESS ? "成功" : "失败") + "」",
+                    Toast.LENGTH_SHORT).show();
+        });
+        // 长按删除：只移除这一行并刷新计数
+        row.setOnLongClickListener(v -> {
+            LogStore.remove(this, id);
+            containerLog.removeView(row);
+            int total = LogStore.list(this).size();
+            if (total == 0) {
+                renderLog();
+            } else {
+                updateLogCountText(total, Math.min(logShown, total));
+            }
+            Toast.makeText(this, "已删除日志#" + id, Toast.LENGTH_SHORT).show();
+            return true;
+        });
+        containerLog.addView(row);
     }
 
     /** 备份日志：弹出系统「另存为」，由用户选保存位置（建议 Download）。 */

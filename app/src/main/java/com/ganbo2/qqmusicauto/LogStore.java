@@ -15,7 +15,8 @@ import java.util.List;
  */
 public class LogStore {
     public static final String KEY_LOG = "click_log";
-    private static final int MAX = 100;
+    /** 最多保留的日志条数。放宽到 500 条，覆盖安装/重启均不丢；超出后自动挤掉最旧一条。 */
+    public static final int MAX = 500;
 
     /** 结果：0 = 待标记，1 = 成功，2 = 失败。 */
     public static final int RESULT_UNKNOWN = 0;
